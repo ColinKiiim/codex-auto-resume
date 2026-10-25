@@ -1,92 +1,97 @@
-# CodexAutoResume 1.5.3
+# CodexAutoResume — Codex 暂停后自动恢复运行
 
-识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.5.3-source.zip`；完整许可见 [LICENSE](LICENSE)。
+[下载最新版](https://github.com/ColinKiiim/codex-auto-resume/releases/latest) · [历史版本](https://github.com/ColinKiiim/codex-auto-resume/releases) · [反馈问题](https://github.com/ColinKiiim/codex-auto-resume/issues/new/choose)
 
-## 历史版本与发布
+[English](README.en.md) · [常见问题与排查](docs/troubleshooting.md) · [使用指南](docs/user-guide.md) · [更新记录](CHANGELOG.md) · [MIT](LICENSE)
 
-下载与回退见 [历史发布列表](release/README.md)，变化见 [CHANGELOG](CHANGELOG.md)。1.5.1 起每个版本保留独立 EXE、源码 ZIP、发布说明、SHA256 与元数据，后续版本不会覆盖。最新版快捷入口继续使用 `release/CodexAutoResume.exe`。发布流程见 [releasing.md](docs/releasing.md)。
+**Codex 频繁提示 at capacity，任务停下来后总要手动点继续？** CodexAutoResume 是一个 Windows 桌面小工具：当 Codex 输入框右下角出现向右三角形的恢复按钮时，自动识别并点击，再通过白色方块确认恢复运行。单个 EXE，双击使用，无需 API Key。
 
-## 开始使用
+**Windows auto-resume helper for Codex desktop.** Automatically clicks the resume button when a paused task exposes it, including interruptions reported as “at capacity”. It reduces manual retries; model availability and account limits still apply.
 
-1. 双击 `release/CodexAutoResume.exe`。启动后自动查找 Codex，默认只观察。
-2. 勾选“允许自动点击”即可开始，前台和后台模式都无需快捷键。只有一个合适窗口时自动连接；多个窗口需手动确认；多个按钮候选会暂停点击并持续扫描，恢复单候选后自动继续，可主动点“选择区域”确认。
-3. 前台模式要求 Codex 位于前台且按钮可见。勾选“后台模式”后，可以切到其他应用并把 Codex 完全盖住；保持目标未最小化、未隐藏。
-4. 移动窗口后重新定位。“选择窗口”可以更换目标；取消区域选择后仍保持连接并继续扫描，恢复单候选后继续；已经人工确认的区域仍按原位置跟踪。
-5. 点击“停止”或关闭工具才结束日常监测。临时捕获失败、拖动窗口、未知图形、未确认方块均持续等待；目标最小化时等待还原，关闭后寻找新窗口。
+## Codex at capacity 频繁出现，应该怎么处理？
 
-选项和连接不跨启动保存。启动默认只观察；每次勾选自动点击即生效。切换前台/后台保留当前连接。快捷键被占用不影响普通按钮和自动发现功能。
+先看当前界面是否有可恢复的任务：
 
-## 识别与点击
-
-| 状态 | 行为 |
+| 当前情况 | 如何处理 |
 |---|---|
-| 向右白色三角形 | 四次连续稳定取样后准备恢复，点击前再独立取样核对 |
-| 白色小方块 | 不点击；收到严格方块识别才确认恢复成功 |
-| 向上箭头 | 发送状态，不点击 |
-| 声波图标 | 语音状态，不点击 |
-| 等待用户回答 | 记录状态，约每 2 秒检查面板是否消失；不选答案、不跳过、不提交 |
-| 引用编号或其他未知图形 | 不列为自动定位候选；继续寻找按钮 |
-| 黑屏或暂时无画面 | 不点击，继续等待 |
+| 任务暂停，右下角出现向右三角形 | 本工具可以持续监测，在按钮稳定可识别时自动恢复 |
+| 显示账号用量或重置时间 | 查看账号用量与恢复时间；自动点击不会增加可用额度 |
+| 服务持续不可用，或没有恢复按钮 | 查看服务状态和客户端提示；本工具继续观察，不能替服务恢复容量 |
+| 正在等待回答、确认权限或选择方案 | 由用户处理；本工具识别问答面板后等待 |
+| 已变成白色方块、发送箭头或声波图标 | 分别表示运行、发送、语音状态，不点击 |
 
-问答识别覆盖右下角显示“跳过”以及输入文字后显示“提交”的情况。结合“正在询问问题 / 正在等待你的回答”、分页和底部动作文字判断，避免仅凭一个“提交”或普通消息中的推荐字样判断。面板消失自动恢复图标检测。
+程序根据**窗口中的按钮图形**判断状态，不读取 `at capacity` 报错来诊断原因，也不修改 Codex、模型或账号设置。详细说明见 [Codex at capacity / atcapacity 常见问题](docs/troubleshooting.md)。
 
-普通检测间隔约 400ms。点击至少间隔 5 秒；5 秒未确认方块后继续观察，重新确认稳定三角形时可限速重试，不会因旧版的 8 秒规则停止。前台实际鼠标点击还要求键鼠空闲 0.7 秒；后台不移动系统鼠标，也不主动激活目标。消息投递成功只增加尝试次数，不能直接算恢复成功。
+## 下载与开始使用
 
-## 黄色边框与后台模式
+1. 打开本仓库的 **Releases**，下载最新版本附件 `CodexAutoResume-v版本-windows-x64.exe`。源码 ZIP 面向开发者。
+2. 双击 EXE，并打开 Codex 桌面窗口。工具自动寻找目标，启动时只观察。
+3. 核对识别结果，勾选 **“允许自动点击”** 即开始，无需快捷键或手动标定。
+4. 想切换到其他应用工作时，可勾选 **“后台模式”**。Codex 可以被其他窗口完全遮挡，保持未最小化。
+5. 点击 **“停止”** 或关闭工具结束监测。
 
-旧版每次取样都重建系统捕获会话，容易造成黄色边框反复出现。1.5.0 对同一窗口保留持续的 Windows Graphics Capture 会话，持续排出旧队列帧，并复用 D3D11 设备。窗口调整大小时重建帧池，必要时重新连接。
+需要 Windows 10 1903+ / Windows 11 **x64** 和系统 .NET Framework。复制一个 EXE 即可迁移，图片、图标和许可证已内嵌，无需 Python、Node.js 或额外模型下载。问答面板识别使用 Windows 本机 OCR 语言。
 
-黄色边框是系统捕获指示，系统仍可能保留；本程序不保证无边框。关闭或停止后台捕获时释放会话。静态窗口不一定重复产生像素帧，程序在会话有效时使用最近画面，分别保留原始像素时间和本次取样时间；不能将静态画面说成刚刚重新渲染。目标停止绘制仍是兼容性限制。
+本地构建后，程序也位于 `release/CodexAutoResume.exe`。[使用指南](docs/user-guide.md) 包含窗口选择、备用标定、快捷键和自测方法。
 
-后台输入采用 BM_CLICK 或目标子窗口的 WM 鼠标消息，不注入目标进程、不修改 Codex 文件、不使用后台 SendInput。应用是否接受消息取决于版本和权限。保持两个程序以相同普通用户权限运行。
+## 四种按钮，分别处理
 
-## 状态提醒与日志
+| 图标样本 | 状态 | 工具行为 |
+|---|---|---|
+| ![右三角形恢复按钮](assets/resume-reference.png) | 暂停，可恢复 | 连续稳定识别后点击；点击前再次核对 |
+| ![白色方块运行按钮](assets/running-reference.png) | 正在运行 | 继续观察，作为恢复成功的确认 |
+| ![向上箭头发送按钮](assets/send-current-reference.png) | 发送 | 只观察 |
+| ![声波语音按钮](assets/voice-reference.png) | 语音 | 只观察 |
 
-界面“状态提醒”可选每 1 分钟或 5 分钟（默认 1 分钟）；图标不变时也会报告工作状态，无弹窗。详细日志每 10 秒记录取样数、真实新帧时间、缓存数、异常与恢复计数。点“打开日志”即可查看，两类日志各保留约 2 MiB 当前文件和一个历史文件。
+蓝色引用编号和其他未知图形不列为自动按钮候选。多个真实按钮出现时持续扫描，恢复单候选后自动继续；也可点击“选择区域”确认。多个目标窗口需要用户选择。
 
-后台原始画面超过 5 秒未更新时显示“状态待确认”，旧图不会用于点击或恢复确认；保持监测并自动尝试恢复捕获。详细规则及多候选恢复见 [monitoring-logs.md](docs/monitoring-logs.md)。
+## 适合长期工作的监测方式
 
-## 单文件迁移与自测
+- **窗口位置可变**：自动重新定位，手动标定保留作为备用。
+- **遮挡后台模式**：通过窗口捕获和后台消息尝试恢复，不移动系统鼠标、不抢前台焦点。实际支持情况可用“后台自测”检查。
+- **持续监测**：拖动窗口、暂时无法识别、捕获失败或未确认方块时继续观察，恢复点击至少间隔 5 秒。
+- **状态可见**：每 1 分钟或 5 分钟显示监测心跳，本机详细日志每 10 秒记录一次。
+- **独立窗口**：自己的任务栏图标，方便切回查看。
 
-**复制 `release/CodexAutoResume.exe` 一个文件到其他 Windows 10/11 x64 电脑，双击即可运行。** 无需携带图片、配置、源码、Python、Node、SDK 或 API Key。后台捕获需要 Windows 10 1903+，使用系统 .NET Framework、WinRT 和 D3D11。
+后台模式依赖目标窗口提供新画面并接受消息。最小化时等待还原；画面过期时显示“状态待确认”，继续尝试恢复捕获。黄色边框是 Windows 的捕获指示。详见 [后台模式](docs/background-mode.md) 与 [日志说明](docs/monitoring-logs.md)。
 
-问答识别使用本机 Windows 离线 OCR，需要已安装相应识别语言；它不会联网，也不会额外下载模型。缺少语言或 OCR 不可用时仍继续图标监测，但可能不能标注问答状态。问答文字和完整画面只在内存处理，不写入日志或源码包。
+## 常见问题
 
-- F2 /“本机自检”：检查系统接口、内嵌图片、任务栏身份、许可证与用户数据目录。
-- F4 /“后台自测”：用工具自己的测试按钮和不透明遮挡窗口验证一次后台恢复，以及鼠标和前台窗口不变。测试期间请暂勿操作鼠标/切换窗口；关闭测试遮挡窗口或 F10 组合键可取消。自测暂停日常监测，结束后点开始观察恢复。
-- “打开演示”：自动连接演示窗口；可以切换图标、测试多区域和换位置。
+**能彻底解决 Codex “Selected model is at capacity” 吗？**
 
-日志写到 `%LOCALAPPDATA%\CodexAutoResume\logs`。EXE 目录可以只读。“保存局部诊断图”只保存上一帧按钮区域，不自动保存对话截图。
+它负责在恢复按钮出现时自动操作。服务是否接受下一次请求，仍由 Codex 和服务端决定。遇到持续报错，先核对服务状态、用量和客户端提示，见 [排查指南](docs/troubleshooting.md)。
 
-本地已执行隔离单 EXE、改名、中文/空格/单引号路径、只读文件、空 PATH、不同工作目录检查。第二台实体电脑尚未测试；迁移记录见 [migration-audit.md](docs/migration-audit.md)。
+**会自动发送输入框内容、回答问题或点停止吗？**
 
-## 可选快捷键与备用标定
+只对严格识别的右三角形执行恢复点击；发送箭头、声波、运行方块和问答面板都继续观察。默认自动点击关闭。
 
-| 功能 | 默认组合 |
-|---|---|
-| 连接当前前台 Codex | Ctrl+Alt+F8 |
-| 鼠标放到按钮中心后手动标定 | Ctrl+Alt+F7 |
-| 开始 / 暂停 | Ctrl+Alt+F9 |
-| 停止 | Ctrl+Alt+F10 |
+**能用于 Codex CLI、浏览器版、macOS 或 Linux 吗？**
 
-占用时依次尝试 Ctrl+Alt+Shift、Ctrl+Shift；以主窗口为准。手动标定记录窗口内坐标，移动后跟随，改变尺寸或 DPI 后重新标定。F8 可回到自动定位。多候选选择不预选默认项。
+当前实现面向 Windows x64 上的 Codex 桌面窗口。CLI 和浏览器的重试逻辑需要对应的实现。
 
-## 开发与验证
+**软件好像一直没动，怎么看是否还在工作？**
 
-日常验证用 `build.ps1 -BuildOnly`；正式发布先更新 `VERSION` 和对应版本说明，再运行 `build.ps1`。已发布版本不可覆盖。
+查看界面心跳、取样计数和最近新帧时间；点击“打开日志”可查看 `%LOCALAPPDATA%\CodexAutoResume\logs`。图标没有变化时不会每轮刷屏。
 
-`build.ps1` 使用系统 .NET Framework 的 C# 编译器，不下载 SDK/NuGet。当前 492 项识别、选择、状态机、超时隔离、便携及任务栏检查通过。
+## 隐私与反馈
 
-- `tests/release-pipeline.ps1`：20 项发布契约检查，覆盖历史不覆盖、完整性、版本对应、最新入口、并发锁与源码快照保护。
-- `build.ps1 -BackgroundTests`：完全遮挡输入、多候选、手动标定、位置尺寸变化、句柄稳定、持续会话、自测取消及清理。
-- `build.ps1 -WorkflowTests`：真实主窗体，不按快捷键开启、遮挡下自动点击、长时间未知后恢复、问答仅记录一次/消失恢复、手动停止。
-- `build.ps1 -QuestionTests`：离线 OCR 合成问答面板、跳过/提交及消失恢复。可用 `-QuestionImages` 提供本地截图，截图不进入源码包。
-- `build.ps1 -ChromiumTests`：隔离 Chrome 配置中的自有 HTML 按钮，给测试实例关闭遮挡后台节流后验证 WM 消息路线；Chrome 不是运行依赖。
-- `build.ps1 -TargetProbe`：真实 Codex 完全遮挡只读捕获，不点击。
-- `tests/background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe`：隔离单 EXE 内置后台自测。
+图像识别和 OCR 在本机完成。程序无需账号密码或 API Key，不自动上传画面，也不把问答文字、聊天标题或完整截图写入日志。“保存局部诊断图”由用户主动触发，仅保存按钮区域。
 
-两个用户提供的真实问答截图均已识别。当前版本的完整 GUI 流程已在自有演示窗口测试。用户的旧版截图记录了 4 次真实后台恢复确认，第 5 次尝试因旧版超时停止；不把它当作本版所有 Codex 版本兼容性保证。详细证据见 [background-mode.md](docs/background-mode.md)。
+反馈问题时，请在本仓库 **Issues** 提供工具版本、Codex 版本、Windows 版本、显示缩放、前台/后台模式和相关状态记录。涉及图标误识别时，可附不含对话内容的局部截图。[贡献指南](CONTRIBUTING.md) 说明了复现和验证方法。
 
-主要代码：`src/Monitoring.cs` 心跳/日志/统计，`src/App.cs` 界面与监测，`Recognition.cs` 图标与重试门控，`WindowCapture.cs` 持续后台捕获，`QuestionDetector.cs` 本地问答识别，`Native.cs` 窗口发现与定位，`BackgroundClick.cs` 后台消息，`Selection.cs` / `WindowPicker.cs` 人工确认，`BackgroundDiagnostics.cs` 内置自测。
+## 开发与文档
 
-原创实现采用 MIT；参考项目与商标说明见 [NOTICE](NOTICE)。未引入第三方 DLL，也未复制 OBS GPL 代码。源码包排除 EXE、用户对话截图、日志和私有开发记录。
+当前版本见 [VERSION](VERSION)，历史变化见 [版本说明](docs/releases/README.md)。1.5.3 已通过 4,216 项本机检查，包括数字引用负样本和不同缩放的真实按钮；另有主界面流程、后台遮挡及单 EXE 隔离迁移检查。具体覆盖范围见 [验证记录](docs/validation.md)。
+
+```powershell
+# 编译并运行回归检查，不改动已发布版本
+.\build.ps1 -BuildOnly
+```
+
+- [开发与专项验证](docs/development.md)
+- [发布与历史版本](docs/releasing.md)
+- [GitHub 上线与可发现性](docs/github-launch.md)
+- [英文 FAQ](docs/troubleshooting.en.md)
+- [文档索引](llms.txt)
+
+MIT 开源，完整许可见 [LICENSE](LICENSE)。这是独立社区项目；Codex / ChatGPT 为 OpenAI 产品名称，详见 [NOTICE](NOTICE)。

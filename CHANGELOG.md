@@ -1,6 +1,14 @@
 # 更新记录
 
-版本说明与可用附件见 [历史发布列表](release/README.md)。源码、EXE、SHA256 校验及发布说明按版本永久保留。
+版本变化见 [版本说明](docs/releases/README.md)，EXE、源码 ZIP 和 SHA256 校验文件在本仓库 Releases 下载。
+
+## 未发布
+
+- 完善中英文首页、at capacity 排查 FAQ、使用与开发指南、贡献入口和文档索引。
+- 准备 GitHub 简介、Topics、Issue / PR 模板，并将这些文件纳入后续源码包。
+- 统一 Release 标题与中英文分类更新日志，增加发布模板及 GitHub 正文、草稿和附件导出。
+
+## 已发布版本
 
 | 版本 | 日期（UTC+8） | 主要变化 |
 |---|---|---|

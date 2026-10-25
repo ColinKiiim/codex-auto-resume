@@ -13,7 +13,9 @@ $exe = (Resolve-Path -LiteralPath $ExecutablePath).Path
 $source = (Resolve-Path -LiteralPath $SourceArchivePath).Path
 $notes = (Resolve-Path -LiteralPath $NotesPath).Path
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($exe).FileVersion -ne ($Version + '.0')) { throw 'EXE file version does not match release version.' }
-if (-not ([IO.File]::ReadAllText($notes).StartsWith('# v' + $Version + ' '))) { throw 'Release notes must begin with the matching version heading.' }
+$notesText = [IO.File]::ReadAllText($notes)
+if (-not ($notesText.StartsWith('# CodexAutoResume v' + $Version + "`n") -or $notesText.StartsWith('# CodexAutoResume v' + $Version + "`r`n") -or $notesText.StartsWith('# v' + $Version + ' '))) { throw 'Release notes must begin with the matching version heading.' }
+if ($notesText -match '\{\{[^}]+\}\}') { throw 'Replace release-template placeholders before publishing.' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $sourceZip = [IO.Compression.ZipFile]::OpenRead($source)
 try {
@@ -84,7 +86,7 @@ if (Test-Path -LiteralPath $versionDirectory) {
     New-Item -ItemType Directory -Path $staging | Out-Null
     foreach ($inputAsset in $inputs) { Copy-Item -LiteralPath $inputAsset.path -Destination (Join-Path $staging $inputAsset.name) }
     $metadata = [ordered]@{
-        schemaVersion = 1; version = $Version; tag = $tag; platform = 'windows'; architecture = 'x64'; license = 'MIT'
+        schemaVersion = 1; version = $Version; tag = $tag; name = ('CodexAutoResume ' + $tag); platform = 'windows'; architecture = 'x64'; license = 'MIT'
         binaryOrigin = $BinaryOrigin
         archivedAt = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8)).ToString('o')
         assets = $assets
@@ -108,16 +110,41 @@ if ($PromoteLatest) {
     Write-Atomic $latestPath ([ordered]@{ schemaVersion = 1; version = $Version; tag = $tag; path = ($tag + '/' + $program.name); sha256 = $program.sha256 } | ConvertTo-Json)
 }
 $versions = @(Get-ChildItem -LiteralPath $OutputRoot -Directory | Where-Object { $_.Name -match '^v\d+\.\d+\.\d+$' } | ForEach-Object { Assert-Release $_.FullName } | Sort-Object { [version]$_.version } -Descending)
+# Prepare GitHub-native titles, bilingual bodies and the three download assets.
+# These are local exports only; uploading and publishing are separate operations.
+$githubRoot = Join-Path $OutputRoot 'github'
+New-Item -ItemType Directory -Path $githubRoot -Force | Out-Null
+foreach ($item in $versions) {
+    $export = Join-Path $githubRoot $item.tag
+    $exportAssets = Join-Path $export 'assets'
+    New-Item -ItemType Directory -Path $exportAssets -Force | Out-Null
+    $archivedNotes = Join-Path (Join-Path $OutputRoot $item.tag) 'RELEASE_NOTES.md'
+    $normalizedNotes = [IO.File]::ReadAllText($archivedNotes).Replace("`r`n", "`n").Replace("`r", "`n")
+    $body = ($normalizedNotes -replace '\A#[^\r\n]+\n\s*', '').Trim() + "`n"
+    Write-Atomic (Join-Path $export 'release-body.md') $body
+    Write-Atomic (Join-Path $export 'release-draft.json') ([ordered]@{
+        tag_name = $item.tag; name = ('CodexAutoResume ' + $item.tag)
+        body = $body; draft = $true; prerelease = $false
+    } | ConvertTo-Json -Depth 4)
+    $downloadAssets = @($item.assets | Where-Object { $_.kind -in @('portable-executable', 'source') })
+    foreach ($asset in $downloadAssets) {
+        $destination = Join-Path $exportAssets $asset.name
+        if (-not (Test-Path -LiteralPath $destination) -or (Hash $destination) -ne $asset.sha256) {
+            Copy-Item -LiteralPath (Join-Path (Join-Path $OutputRoot $item.tag) $asset.name) -Destination $destination -Force
+        }
+    }
+    Write-Atomic (Join-Path $exportAssets 'SHA256SUMS.txt') ((@($downloadAssets | ForEach-Object { $_.sha256 + '  ' + $_.name }) -join "`n") + "`n")
+}
 $latestVersion = if (Test-Path -LiteralPath $latestPath) { (Get-Content -LiteralPath $latestPath -Raw | ConvertFrom-Json).version } else { $null }
 Write-Atomic (Join-Path $OutputRoot 'releases.json') ([ordered]@{ schemaVersion = 1; latest = $latestVersion; releases = $versions } | ConvertTo-Json -Depth 8)
-$readme = @('# CodexAutoResume 历史发布', '', '最新版入口：[`CodexAutoResume.exe`](CodexAutoResume.exe)。迁移到新电脑只需复制这个 EXE。', '', '每个版本提供 EXE、源码 ZIP、发布说明和 SHA256 校验。', '', '| 版本 | Windows x64 | 源码 | 发布说明 | 校验值 |', '|---|---|---|---|---|')
+$readme = @('# CodexAutoResume Releases', '', 'Windows x64 便携版：[`CodexAutoResume.exe`](CodexAutoResume.exe)。下载后双击运行。', '', '## 历史版本', '', '| Release | Windows x64 | Source | 更新日志 | SHA256 |', '|---|---|---|---|---|')
 foreach ($item in $versions) {
-    $label = 'v' + $item.version
-    if ($item.version -eq $latestVersion) { $label += '（最新版）' }
+    $label = 'CodexAutoResume v' + $item.version
+    if ($item.version -eq $latestVersion) { $label += ' · Latest' }
     $program = $item.assets | Where-Object { $_.kind -eq 'portable-executable' }
     $sources = $item.assets | Where-Object { $_.kind -eq 'source' }
     $readme += ('| ' + $label + ' | [EXE](' + $item.tag + '/' + $program.name + ') | [ZIP](' + $item.tag + '/' + $sources.name + ') | [说明](' + $item.tag + '/RELEASE_NOTES.md) | [SHA256](' + $item.tag + '/SHA256SUMS.txt) |')
 }
-$readme += @('', '版本索引：[`releases.json`](releases.json)、[`latest.json`](latest.json)。另见 [更新记录](../CHANGELOG.md) 与 [发布流程](../docs/releasing.md)。')
+$readme += @('', 'GitHub Release 标题、正文和下载附件位于 `github/v版本号/`。发布方式见 [发布指南](../docs/releasing.md)。')
 Write-Atomic (Join-Path $OutputRoot 'README.md') (($readme -join "`n") + "`n")
 } finally { $publicationLock.Dispose() }

@@ -1,0 +1,19 @@
+{
+  "name": "codex-auto-resume",
+  "description": "Windows utility to auto-resume paused Codex desktop tasks when a resume button appears, including at-capacity interruptions. Portable single EXE, local recognition, MIT.",
+  "topics": [
+    "codex",
+    "openai-codex",
+    "codex-desktop",
+    "auto-resume",
+    "at-capacity",
+    "windows",
+    "desktop-automation",
+    "image-recognition",
+    "winforms",
+    "csharp",
+    "dotnet-framework",
+    "windows-graphics-capture"
+  ],
+  "repository_url": "https://github.com/ColinKiiim/codex-auto-resume"
+}

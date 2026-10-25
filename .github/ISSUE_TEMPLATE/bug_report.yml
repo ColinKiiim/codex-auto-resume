@@ -1,0 +1,52 @@
+name: Bug report / 问题反馈
+description: Report recognition, monitoring, or background-mode problems / 识别、监测或后台模式问题
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先阅读 README 中的常见问题。模型容量和账号额度问题请向 OpenAI 反馈。
+        Please read the FAQ first. Report service capacity and account-limit problems through OpenAI’s channels.
+        分享局部截图或日志前检查私人信息 / Review images and logs for private information before sharing.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions / 版本
+      description: Utility version, Codex version, Windows version / 工具、Codex、Windows 版本
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: Display / 显示设置
+      description: Resolution, display scale, number of monitors / 分辨率、显示缩放、显示器数量
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode / 模式
+      options:
+        - Foreground / 前台
+        - Background / 后台
+        - Both / 两者均有
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps and behavior / 复现与行为
+      description: Include expected and actual behavior, window visibility, automatic/manual region, and approximate time.
+      placeholder: |
+        1. ...
+        Expected / 预期：...
+        Actual / 实际：...
+        Covered or minimized / 遮挡或最小化：...
+        Automatic or manual region / 自动定位或手动标定：...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Relevant logs or cropped icon / 相关日志或按钮局部图
+      description: Open logs from the app. Paste only relevant lines or attach a cropped icon; omit full conversations and credentials.

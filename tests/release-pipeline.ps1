@@ -18,6 +18,18 @@ Check ($latest.version -eq '1.5.0') 'latest points to published version'
 Check ((Get-FileHash -LiteralPath (Join-Path $outputRoot 'CodexAutoResume.exe')).Hash -eq $latest.sha256) 'latest EXE exactly matches versioned asset'
 $checksumLines = @(Get-Content -LiteralPath (Join-Path $archive 'SHA256SUMS.txt'))
 Check ($checksumLines.Count -eq 4) 'checksums include executable, source, notes and metadata'
+$githubExport = Join-Path $outputRoot 'github\v1.5.0'
+$draft = Get-Content -LiteralPath (Join-Path $githubExport 'release-draft.json') -Raw | ConvertFrom-Json
+$body = [IO.File]::ReadAllText((Join-Path $githubExport 'release-body.md'))
+Check ($draft.name -eq 'CodexAutoResume v1.5.0' -and $draft.tag_name -eq 'v1.5.0' -and $draft.draft -and -not $draft.prerelease) 'GitHub export uses a product/version title and remains a draft'
+Check ($draft.body -eq $body -and $body.StartsWith('## 更新日志（中文）') -and $body.Contains('## Changelog (English)')) 'GitHub body preserves both languages without a duplicate release title'
+$downloadDirectory = Join-Path $githubExport 'assets'
+$downloadSums = @(Get-Content -LiteralPath (Join-Path $downloadDirectory 'SHA256SUMS.txt'))
+Check (@(Get-ChildItem -LiteralPath $downloadDirectory -File).Count -eq 3 -and $downloadSums.Count -eq 2) 'GitHub Assets contains only executable, source and download checksums'
+foreach ($line in $downloadSums) {
+    if ($line -notmatch '^([0-9a-f]{64})  ([^\\/]+)$' -or (Get-FileHash -LiteralPath (Join-Path $downloadDirectory $Matches[2])).Hash.ToLowerInvariant() -ne $Matches[1]) { throw 'GitHub download checksum mismatch' }
+}
+Check ((Get-FileHash -LiteralPath (Join-Path $downloadDirectory 'CodexAutoResume-v1.5.0-windows-x64.exe')).Hash -eq $latest.sha256) 'GitHub export keeps the exact archived executable bytes'
 & $publisher @inputs -PromoteLatest
 Check ((Digest $archive) -eq $originalDigest) 'identical publication is idempotent and preserves archive bytes'
 $changedNotes = Join-Path $temporaryRoot 'changed-notes.md'
@@ -25,6 +37,10 @@ $changedNotes = Join-Path $temporaryRoot 'changed-notes.md'
 $changed = $inputs.Clone(); $changed.NotesPath = $changedNotes
 Must-Fail { & $publisher @changed } 'same-version changed asset is rejected'
 Check ((Digest $archive) -eq $originalDigest) 'rejected publication leaves old assets unchanged'
+$templateNotes = Join-Path $temporaryRoot 'template-notes.md'
+[IO.File]::WriteAllText($templateNotes, [IO.File]::ReadAllText($inputs.NotesPath) + "`n{{UNFINISHED}}")
+$templateInput = $inputs.Clone(); $templateInput.NotesPath = $templateNotes
+Must-Fail { & $publisher @templateInput } 'unfinished release-template placeholders are rejected'
 $mismatch = $inputs.Clone(); $mismatch.Version = '1.5.9'
 Must-Fail { & $publisher @mismatch } 'mismatched EXE version is rejected'
 Check (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'v1.5.9'))) 'version rejection creates no misleading archive'

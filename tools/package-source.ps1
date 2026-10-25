@@ -8,8 +8,8 @@ New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
 $archivePath = Join-Path $packageDirectory ('CodexAutoResume-' + $version + '-source.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $filePaths = @()
-foreach ($fileName in @('LICENSE', 'NOTICE', 'README.md', 'CHANGELOG.md', 'VERSION', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
-foreach ($folder in @('src', 'assets', 'tools', 'docs', 'tests')) {
+foreach ($fileName in @('LICENSE', 'NOTICE', 'README.md', 'README.en.md', 'CONTRIBUTING.md', 'llms.txt', 'CHANGELOG.md', 'VERSION', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
+foreach ($folder in @('src', 'assets', 'tools', 'docs', 'tests', '.github')) {
     foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -File)) {
         $include = ($folder -ne 'tests' -or $file.Extension -in @('.cs', '.ps1')) -and $file.Name -ne 'background-progress.md'
         if ($include) { $filePaths += $file.FullName }

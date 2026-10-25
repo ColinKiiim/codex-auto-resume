@@ -1,34 +1,68 @@
 # 发布与历史版本
 
-`release/README.md` 是面向使用者的历史下载列表。每个 `release/v主.次.补丁/` 包含：
+[首页](../README.md) · [版本说明](releases/README.md) · [更新日志模板](releases/TEMPLATE.md)
 
-- `CodexAutoResume-v版本-windows-x64.exe`：单文件便携程序。
-- `CodexAutoResume-v版本-source.zip`：该版本源码快照。
-- `RELEASE_NOTES.md`：该版本的功能变化。
-- `release.json`：版本、Windows x64、MIT、归档时间、资产来源、大小和 SHA256。
-- `SHA256SUMS.txt`：EXE、源码 ZIP、说明和元数据的 SHA256。
+## Release 展示格式
 
-`release/CodexAutoResume.exe` 始终是最新版复制入口；`latest.json` 指向版本资产；`releases.json` 是完整历史索引。只有最新入口和索引会更新，历史资产不能同版本换内容。校验值用于检查文件完整性。
+每个 GitHub Release 使用统一标题 **CodexAutoResume v主.次.补丁**，例如 `CodexAutoResume v1.5.3`。
 
-## 日常开发
+正文先中文、后英文，两部分使用相同版本号和日期，按本次实际变化选用以下分类：
 
-运行 `build.ps1 -BuildOnly`，编译和运行回归检查，不发布、不改动 release/packages。专项测试仍使用原来的 `-WorkflowTests`、`-BackgroundTests` 等开关。
+| 中文 | English | 内容 |
+|---|---|---|
+| 新增 | Added | 新功能及用途 |
+| 变更 | Changed | 已有行为的调整 |
+| 修复 | Fixed | 具体问题和修复后的行为 |
+| 移除 | Removed | 本版移除的功能 |
 
-## 发布新版本
+没有内容的分类直接删掉。说明聚焦用户能看到的变化，测试记录放在开发文档。附件由 GitHub 的 **Assets** 展示，不在正文重复列文件清单。
 
-1. 修改根目录 `VERSION`（如 `1.5.3`）。构建脚本据此生成程序集版本、窗口显示版本和清单版本，源码 ZIP 也使用同一版本。
-2. 新建 `docs/releases/v1.5.3.md`，首行以 `# v1.5.3 ` 开始，记录变化和限制；更新 CHANGELOG 与 README。
-3. 执行适合本次变化的专项测试，再运行 `build.ps1`。它先编译、回归和单文件隔离检查，再打包源码、归档版本并更新最新入口。
-4. 如改动后台输入，另运行 `tests/background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe`。
+格式参考 [Cockpit Tools 的 Release](https://github.com/jlcodes99/cockpit-tools/releases/tag/v1.3.74)。内容按本项目各版实际变化编写。
 
-已存在同版本源码且内容未变时复用原 ZIP。内容变化则要求增加 VERSION。EXE、源码、发布说明中任一资产变化都不能覆盖历史目录；系统 C# 编译器重编译可能产生不同二进制，因此同版本日常验证请使用 `-BuildOnly`，需要再次发布时增加补丁号。
+## 新版本步骤
 
-如果新版本已归档，但最新版 EXE 被运行中的工具锁定，关闭工具后可使用 `tools/publish-release.ps1` 对归档内相同文件重试并加 `-PromoteLatest`；不会改写历史资产。历史导入不加此开关，避免退回旧版。不要手工编辑版本目录内文件，完整性检查会拒绝被修改的资产。
+1. 修改根目录 `VERSION`，统一编译、界面、清单与源码包的版本号。
+2. 复制 [TEMPLATE.md](releases/TEMPLATE.md) 为 `docs/releases/v版本号.md`，替换版本、日期与条目，删除空分类；同步更新 CHANGELOG 和版本列表。
+3. 日常验证运行 `.\build.ps1 -BuildOnly`，按修改范围运行相关专项检查。
+4. 运行 `.\build.ps1`，验证候选 EXE、生成源码包、本地版本归档和 GitHub Release 导出文件。
+5. 在 GitHub 为对应的发布源码创建 `v版本号` tag，再建立 Release 草稿。确认正文和附件后发布，最新版标记 Latest。
 
-发布脚本会拒绝 EXE/源码版本不符、损坏资产、同版本替换和意外降低 latest；使用发布锁避免并发写入。`tests/release-pipeline.ps1` 在临时目录执行 20 项检查，不修改真实历史；此集成测试需要本地已有 v1.5.0 与 v1.4.0 的归档附件，纯源码下载者可从历史发布补齐后运行。
+应用版本的源头是 [VERSION](../VERSION)。已发布源码和二进制保留版本快照；开发中的文档变化在下一次发布纳入新源码包。
 
-## 用于 GitHub Release
+## 可直接上传的内容
 
-现有文件布局可以直接作为 GitHub Release 附件来源：以 `v1.5.3` 为 tag/标题，使用对应 RELEASE_NOTES.md，将版本目录下的 EXE、源码 ZIP、SHA256SUMS.txt、release.json 与说明上传。源仓库保留 VERSION、CHANGELOG、各版本说明和构建脚本；生成的 dist/release/packages 由 .gitignore 排除。
+每次本地归档会生成 `release/github/v版本号/`：
 
+```text
+v1.5.3/
+  release-body.md          GitHub Release 正文
+  release-draft.json       标题、tag、正文及草稿状态
+  assets/
+    CodexAutoResume-v1.5.3-windows-x64.exe
+    CodexAutoResume-v1.5.3-source.zip
+    SHA256SUMS.txt
+```
 
+GitHub 标题填写 `CodexAutoResume v1.5.3`，正文粘贴 `release-body.md`，将 `assets/` 内的三个文件上传到 Assets。`release-draft.json` 可用于后续发布工具集成，它不会自行创建或发布远程 Release。导出不包含仓库地址，tag 需先与实际源码对应。
+
+普通用户下载 EXE，开发者下载 source.zip。GitHub 自动提供的 Source code ZIP/TAR 是 tag 的仓库快照；手动上传的 source.zip 是构建脚本生成的版本源码包。
+
+GitHub 导出目录内的 `SHA256SUMS.txt` 对应其 EXE 和源码 ZIP，可在下载目录运行：
+
+```powershell
+Get-FileHash .\CodexAutoResume-v1.5.3-windows-x64.exe -Algorithm SHA256
+```
+
+## 本地版本归档
+
+`release/v版本号/` 保存 EXE、源码 ZIP、RELEASE_NOTES.md、release.json 和完整的 SHA256SUMS.txt。`release/CodexAutoResume.exe` 是最新便携入口；`latest.json` 和 `releases.json` 提供版本索引，`release/README.md` 提供本地历史列表。
+
+本地完整校验清单同时覆盖说明与元数据；GitHub 导出的校验清单只覆盖该目录中实际上传的两个下载文件。
+
+已存在版本的不同二进制或源码不会覆盖原归档。相同文件可以重复执行 `tools/publish-release.ps1` 重新生成索引和 GitHub 导出内容；旧版归档不加 `-PromoteLatest`。若最新 EXE 正在运行，先关闭工具再更新最新入口。
+
+## 检查与源码范围
+
+`tests/release-pipeline.ps1` 在临时目录检查版本对应、完整性、历史保护、最新入口、发布锁和源码包。它需要本地 v1.5.0、v1.4.0 的发布附件。后台输入改动另运行 `tests/background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe`。
+
+源仓库保留源码、文档、资源、构建脚本和模板；`dist/`、`release/`、`packages/` 由 `.gitignore` 排除，生成的 Assets 单独上传到 GitHub Releases。
