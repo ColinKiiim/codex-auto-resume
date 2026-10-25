@@ -51,7 +51,7 @@ namespace CodexAutoResume
 
         public MainForm()
         {
-            Text = "CodexAutoResume 1.3.0 · 后台模式（实验） · 单文件便携版";
+            Text = "CodexAutoResume 1.1.1 · 后台模式（实验） · 单文件便携版";
             ShowInTaskbar = true; ShowIcon = true; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10);
             ClientSize = new Size(760, 680); MinimumSize = new Size(720, 680);
@@ -296,7 +296,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "CodexAutoResume 1.3.0 · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和本说明均已内置。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n先选前台 / 后台模式，再切到 Codex 按 " + shortcut + "+F8 连接。\n多个候选必须手动选择确认。窗口位置和大小可以变化。\n备用标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察核对识别，再勾选允许自动点击。\n\n后台模式（实验）：可切到其他应用，允许窗口完全被盖住。\n使用系统窗口捕获，可能显示系统黄色捕获边框。\n不主动激活目标或移动鼠标；应用是否接受后台消息取决于版本。\n已验证演示和 Chromium 测试页后台点击、真实 Codex 遮挡捕获；\n真实 Codex 的暂停到恢复尚需实际暂停场景验证。\n最小化时暂停；黑屏、无新帧或未知图形均不点击。\n8 秒未确认运行方块则停止，不会循环重试。\n前台模式仍要求按钮可见且目标在前台。\n\n三角形可恢复；方块运行中；向上箭头发送；声波语音。\n每次重启后需要按快捷键连接 Codex。日志及主动保存局部图：\n" + logDirectory + "\nF2 本机自检；F3 查看 MIT 许可。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "CodexAutoResume 1.1.1 · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和本说明均已内置。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n先选前台 / 后台模式，再切到 Codex 按 " + shortcut + "+F8 连接。\n多个候选必须手动选择确认。窗口位置和大小可以变化。\n备用标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察核对识别，再勾选允许自动点击。\n\n后台模式（实验）：可切到其他应用，允许窗口完全被盖住。\n使用系统窗口捕获，可能显示系统黄色捕获边框。\n不主动激活目标或移动鼠标；应用是否接受后台消息取决于版本。\n已验证演示和 Chromium 测试页后台点击、真实 Codex 遮挡捕获；\n真实 Codex 的暂停到恢复尚需实际暂停场景验证。\n最小化时暂停；黑屏、无新帧或未知图形均不点击。\n8 秒未确认运行方块则停止，不会循环重试。\n前台模式仍要求按钮可见且目标在前台。\n\n三角形可恢复；方块运行中；向上箭头发送；声波语音。\n每次重启后需要按快捷键连接 Codex。日志及主动保存局部图：\n" + logDirectory + "\nF2 本机自检；F3 查看 MIT 许可。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {

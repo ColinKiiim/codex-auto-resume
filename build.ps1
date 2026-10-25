@@ -1,6 +1,7 @@
-param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests)
+﻿param([switch]$BuildOnly, [switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
+& (Join-Path $projectRoot 'tools/assert-version-policy.ps1') -Version ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim())
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x C# compiler was not found.' }
 $distPath = Join-Path $projectRoot 'dist'
@@ -50,6 +51,7 @@ if ($BackgroundTests) {
     if ($LASTEXITCODE -ne 0) { throw 'Background tests failed.' }
     return
 }
+if ($BuildOnly) { Write-Output 'Build-only verified: 1.1.1'; return }
 $releasePath = Join-Path $projectRoot 'release'
 New-Item -ItemType Directory -Path $releasePath -Force | Out-Null
 $releaseExe = Join-Path $releasePath 'CodexAutoResume.exe'

@@ -1,4 +1,4 @@
-# 1.3.0 后台模式（实验）
+# 1.1.1 后台模式（实验）
 
 本机验证日期：2026-10-24，Windows 11 x64。此版本继续采用 MIT，分发只需要 release/CodexAutoResume.exe。
 

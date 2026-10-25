@@ -1,10 +1,10 @@
-# CodexAutoResume 1.3.0
+# CodexAutoResume 1.1.1
 
-MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标和分组，不与启动它的 ChatGPT/Codex 窗口共用任务栏身份。源码包位于 `packages/CodexAutoResume-1.3.0-source.zip`。
+MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标和分组，不与启动它的 ChatGPT/Codex 窗口共用任务栏身份。源码包位于 `packages/CodexAutoResume-1.1.1-source.zip`。
 
 识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。支持自动定位、多区域人工选择、备用手动标定，以及单文件便携使用。
 
-## 后台模式（1.3.0 实验功能）
+## 后台模式（1.1.1 实验功能）
 
 勾选“后台模式”后，先将 Codex 放到前台并按主窗口显示的 F8 组合键连接。观察识别正确后勾选“允许自动点击”，随后可以切到其他应用，把 Codex 完全盖住；保持 Codex 未最小化。切换前台/后台模式会清除连接，需要重新按 F8。
 
