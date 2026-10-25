@@ -1,6 +1,10 @@
-# CodexAutoResume 1.5.0
+# CodexAutoResume 1.5.1
 
-识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.5.0-source.zip`；完整许可见 [LICENSE](LICENSE)。
+识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.5.1-source.zip`；完整许可见 [LICENSE](LICENSE)。
+
+## 历史版本与发布
+
+下载与回退见 [历史发布列表](release/README.md)，变化见 [CHANGELOG](CHANGELOG.md)。1.5.1 起每个版本保留独立 EXE、源码 ZIP、发布说明、SHA256 与元数据，后续版本不会覆盖。1.2.2–1.4.0 已从历史源码补构建并标注来源，1.5.0 原始文件已保留。最新版快捷入口继续使用 `release/CodexAutoResume.exe`。发布流程见 [releasing.md](docs/releasing.md)。
 
 ## 开始使用
 
@@ -62,8 +66,11 @@
 
 ## 开发与验证
 
+日常验证用 `build.ps1 -BuildOnly`；正式发布先更新 `VERSION` 和对应版本说明，再运行 `build.ps1`。已发布版本不可覆盖。
+
 `build.ps1` 使用系统 .NET Framework 的 C# 编译器，不下载 SDK/NuGet。当前 471 项识别、选择、状态机、超时隔离、便携及任务栏检查通过。
 
+- `tests/release-pipeline.ps1`：20 项发布契约检查，覆盖历史不覆盖、完整性、版本对应、最新入口、并发锁与源码快照保护。
 - `build.ps1 -BackgroundTests`：完全遮挡输入、多候选、手动标定、位置尺寸变化、句柄稳定、持续会话、自测取消及清理。
 - `build.ps1 -WorkflowTests`：真实主窗体，不按快捷键开启、遮挡下自动点击、长时间未知后恢复、问答仅记录一次/消失恢复、手动停止。
 - `build.ps1 -QuestionTests`：离线 OCR 合成问答面板、跳过/提交及消失恢复。可用 `-QuestionImages` 提供本地截图，截图不进入源码包。

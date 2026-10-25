@@ -1,13 +1,22 @@
-param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests)
+param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x C# compiler was not found.' }
 $distPath = Join-Path $projectRoot 'dist'
 New-Item -ItemType Directory -Path $distPath -Force | Out-Null
+$version = [IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim()
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION must contain major.minor.patch.' }
+$generatedVersion = Join-Path $distPath 'Version.g.cs'
+$versionSource = '[assembly: System.Reflection.AssemblyVersion("' + $version + '.0")]' + [Environment]::NewLine + '[assembly: System.Reflection.AssemblyFileVersion("' + $version + '.0")]' + [Environment]::NewLine + 'namespace CodexAutoResume { internal static class BuildVersion { public const string Value = "' + $version + '"; } }'
+[IO.File]::WriteAllText($generatedVersion, $versionSource, [Text.UTF8Encoding]::new($false))
+[xml]$manifest = [IO.File]::ReadAllText((Join-Path $projectRoot 'app.manifest'))
+$manifest.assembly.assemblyIdentity.version = $version + '.0'
+$generatedManifest = Join-Path $distPath 'app.generated.manifest'; $manifest.Save($generatedManifest)
 $sources = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object { $_.FullName }
+$sources = @($sources) + @($generatedVersion)
 & (Join-Path $projectRoot 'tools\build-icon.ps1')
-$commonArgs = @('/nologo', '/optimize+', '/platform:x64', '/utf8output', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', ('/win32manifest:' + (Join-Path $projectRoot 'app.manifest')))
+$commonArgs = @('/nologo', '/optimize+', '/platform:x64', '/utf8output', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', ('/win32manifest:' + $generatedManifest))
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Graphics.winmd')
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Foundation.winmd')
 foreach ($metadata in @('Windows.Media', 'Windows.Storage', 'Windows.Globalization')) { $commonArgs += '/reference:' + (Join-Path $env:WINDIR ('System32\WinMetadata\' + $metadata + '.winmd')) }
@@ -66,15 +75,15 @@ if ($BackgroundTests) {
     if ($LASTEXITCODE -ne 0) { throw 'Background tests failed.' }
     return
 }
-$releasePath = Join-Path $projectRoot 'release'
-New-Item -ItemType Directory -Path $releasePath -Force | Out-Null
-$releaseExe = Join-Path $releasePath 'CodexAutoResume.exe'
-Copy-Item -LiteralPath (Join-Path $distPath 'CodexAutoResume.exe') -Destination $releaseExe -Force
-& (Join-Path $projectRoot 'tests\portable-smoke.ps1') -ExecutablePath $releaseExe
+if ($BuildOnly) { Write-Output ('Build-only verified: ' + $version + '; release history unchanged.'); return }
+$candidateExe = Join-Path $distPath 'CodexAutoResume.exe'
+& (Join-Path $projectRoot 'tests\portable-smoke.ps1') -ExecutablePath $candidateExe
 if (-not $?) { throw 'Portable release verification failed.' }
-& (Join-Path $projectRoot 'tests\migration-audit.ps1') -ExecutablePath $releaseExe
+& (Join-Path $projectRoot 'tests\migration-audit.ps1') -ExecutablePath $candidateExe
 if (-not $?) { throw 'Migration audit failed.' }
 & (Join-Path $projectRoot 'tools\package-source.ps1')
 if (-not $?) { throw 'Source packaging failed.' }
+& (Join-Path $projectRoot 'tools\publish-release.ps1') -Version $version -ExecutablePath $candidateExe -SourceArchivePath (Join-Path $projectRoot ('packages\CodexAutoResume-' + $version + '-source.zip')) -NotesPath (Join-Path $projectRoot ('docs\releases\v' + $version + '.md')) -PromoteLatest
+if (-not $?) { throw 'Versioned release publication failed.' }
 Write-Output ('Built: ' + (Join-Path $distPath 'CodexAutoResume.exe'))
-Write-Output ('Copy this one file to another PC: ' + $releaseExe)
+Write-Output ('Copy this one file to another PC: ' + (Join-Path $projectRoot 'release\CodexAutoResume.exe'))

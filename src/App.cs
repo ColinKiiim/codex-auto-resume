@@ -60,7 +60,7 @@ namespace CodexAutoResume
 
         public MainForm()
         {
-            Text = "CodexAutoResume 1.5.0 · 后台模式（实验） · 单文件便携版";
+            Text = "CodexAutoResume " + Portable.Version + " · 后台模式（实验） · 单文件便携版";
             ShowInTaskbar = true; ShowIcon = true; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10);
             ClientSize = new Size(760, 720); MinimumSize = new Size(720, 720);
@@ -408,7 +408,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "CodexAutoResume 1.5.0 · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和说明均已内置，无需安装开发工具。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n启动后自动寻找 Codex 并观察；勾选允许自动点击即可生效。\n后台模式同样无需快捷键；多个窗口或区域须人工确认。\n“选择窗口”可重新连接；移动窗口后自动重新定位。\n备用：" + shortcut + "+F8 连接前台窗口；F7 鼠标手动标定；\nF9 开始/暂停；F10 停止。快捷键可选。\n\n后台模式（实验）允许完全遮挡，目标须保持未最小化。\n使用持续系统捕获会话，减少反复启动造成的黄色边框闪烁；\n系统仍可能保留黄色指示边框，不保证无边框。\n不主动激活目标或移动鼠标；兼容性取决于目标版本和权限。\n临时捕获失败、拖动、未知或未确认方块均持续等待。\n四次稳定三角形取样后点击，点击前复查，至少间隔5秒。\n收到严格方块才计为确认；超时后持续观察并限速重试。\n方块、发送、语音、问答面板不会被点击。\n\n等待用户回答：识别问答状态，约每2秒检查一次；\n兼容跳过和提交两种面板，不选择、不跳过、不提交。\n面板消失自动恢复检测；依赖本机 Windows OCR 语言。\n缺少语言时仅影响问答识别，仍持续图标监测且不猜测点击。\n扫描图和问答文字仅在内存处理，不保存对话。\n\n日志及主动保存的按钮局部图：\n" + logDirectory + "\nF2 本机自检；F3 MIT 许可；F4 完全遮挡后台自测。\n自测会暂停监控，请暂勿操作鼠标；完成后点开始观察。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "CodexAutoResume " + Portable.Version + " · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和说明均已内置，无需安装开发工具。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n启动后自动寻找 Codex 并观察；勾选允许自动点击即可生效。\n后台模式同样无需快捷键；多个窗口或区域须人工确认。\n“选择窗口”可重新连接；移动窗口后自动重新定位。\n备用：" + shortcut + "+F8 连接前台窗口；F7 鼠标手动标定；\nF9 开始/暂停；F10 停止。快捷键可选。\n\n后台模式（实验）允许完全遮挡，目标须保持未最小化。\n使用持续系统捕获会话，减少反复启动造成的黄色边框闪烁；\n系统仍可能保留黄色指示边框，不保证无边框。\n不主动激活目标或移动鼠标；兼容性取决于目标版本和权限。\n临时捕获失败、拖动、未知或未确认方块均持续等待。\n四次稳定三角形取样后点击，点击前复查，至少间隔5秒。\n收到严格方块才计为确认；超时后持续观察并限速重试。\n方块、发送、语音、问答面板不会被点击。\n\n等待用户回答：识别问答状态，约每2秒检查一次；\n兼容跳过和提交两种面板，不选择、不跳过、不提交。\n面板消失自动恢复检测；依赖本机 Windows OCR 语言。\n缺少语言时仅影响问答识别，仍持续图标监测且不猜测点击。\n扫描图和问答文字仅在内存处理，不保存对话。\n\n日志及主动保存的按钮局部图：\n" + logDirectory + "\nF2 本机自检；F3 MIT 许可；F4 完全遮挡后台自测。\n自测会暂停监控，请暂勿操作鼠标；完成后点开始观察。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {
