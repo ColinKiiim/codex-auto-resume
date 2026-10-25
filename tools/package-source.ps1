@@ -1,6 +1,7 @@
-param([string]$OutputDirectory)
+﻿param([string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+& (Join-Path $projectRoot 'tools/assert-version-policy.ps1') -Version ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim())
 $version = [IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION must contain major.minor.patch.' }
 $packageDirectory = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot 'packages' }
@@ -8,7 +9,7 @@ New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
 $archivePath = Join-Path $packageDirectory ('CodexAutoResume-' + $version + '-source.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $filePaths = @()
-foreach ($fileName in @('LICENSE', 'NOTICE', 'README.md', 'CHANGELOG.md', 'VERSION', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
+foreach ($fileName in @('version-policy.json', 'AGENTS.md', 'LICENSE', 'NOTICE', 'README.md', 'CHANGELOG.md', 'VERSION', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
 foreach ($folder in @('src', 'assets', 'tools', 'docs', 'tests')) {
     foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -File)) {
         $include = ($folder -ne 'tests' -or $file.Extension -in @('.cs', '.ps1')) -and $file.Name -ne 'background-progress.md'
@@ -42,7 +43,7 @@ try {
 } finally { $zip.Dispose() }
 $verify = [IO.Compression.ZipFile]::OpenRead($pendingArchive)
 try {
-    foreach ($required in @('LICENSE', 'NOTICE', 'VERSION', 'CHANGELOG.md', 'src/DesktopIdentity.cs', 'assets/app.ico', 'build.ps1')) {
+    foreach ($required in @('version-policy.json', 'LICENSE', 'NOTICE', 'VERSION', 'CHANGELOG.md', 'src/DesktopIdentity.cs', 'assets/app.ico', 'build.ps1')) {
         if (-not $verify.GetEntry('CodexAutoResume/' + $required)) { throw ('Source package missing: ' + $required) }
     }
     foreach ($entry in $verify.Entries) {

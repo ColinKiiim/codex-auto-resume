@@ -1,10 +1,10 @@
-# CodexAutoResume 1.5.1
+# CodexAutoResume 1.1.5
 
-识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.5.1-source.zip`；完整许可见 [LICENSE](LICENSE)。
+识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.1.5-source.zip`；完整许可见 [LICENSE](LICENSE)。
 
 ## 历史版本与发布
 
-下载与回退见 [历史发布列表](release/README.md)，变化见 [CHANGELOG](CHANGELOG.md)。1.5.1 起每个版本保留独立 EXE、源码 ZIP、发布说明、SHA256 与元数据，后续版本不会覆盖。1.2.2–1.4.0 已从历史源码补构建并标注来源，1.5.0 原始文件已保留。最新版快捷入口继续使用 `release/CodexAutoResume.exe`。发布流程见 [releasing.md](docs/releasing.md)。
+下载与回退见 [历史发布列表](release/README.md)，变化见 [CHANGELOG](CHANGELOG.md)。1.1.5 起每个版本保留独立 EXE、源码 ZIP、发布说明、SHA256 与元数据，后续版本不会覆盖。1.1.0–1.1.3 已从历史源码补构建并标注来源，1.1.4 原始文件已保留。最新版快捷入口继续使用 `release/CodexAutoResume.exe`。发布流程见 [releasing.md](docs/releasing.md)。
 
 ## 开始使用
 
@@ -33,7 +33,7 @@
 
 ## 黄色边框与后台模式
 
-旧版每次取样都重建系统捕获会话，容易造成黄色边框反复出现。1.5.0 对同一窗口保留持续的 Windows Graphics Capture 会话，持续排出旧队列帧，并复用 D3D11 设备。窗口调整大小时重建帧池，必要时重新连接。
+旧版每次取样都重建系统捕获会话，容易造成黄色边框反复出现。1.1.4 对同一窗口保留持续的 Windows Graphics Capture 会话，持续排出旧队列帧，并复用 D3D11 设备。窗口调整大小时重建帧池，必要时重新连接。
 
 黄色边框是系统捕获指示，系统仍可能保留；本程序不保证无边框。关闭或停止后台捕获时释放会话。静态窗口不一定重复产生像素帧，程序在会话有效时使用最近画面，分别保留原始像素时间和本次取样时间；不能将静态画面说成刚刚重新渲染。目标停止绘制仍是兼容性限制。
 

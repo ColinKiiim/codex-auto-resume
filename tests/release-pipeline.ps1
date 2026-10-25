@@ -4,17 +4,17 @@ $publisher = Join-Path $projectRoot 'tools\publish-release.ps1'
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('CodexAutoResume-release-tests-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 $outputRoot = Join-Path $temporaryRoot '中文 releases'
-$originalRoot = Join-Path $projectRoot 'release\v1.5.0'
-$inputs = @{ Version='1.5.0'; ExecutablePath=(Join-Path $originalRoot 'CodexAutoResume-v1.5.0-windows-x64.exe'); SourceArchivePath=(Join-Path $originalRoot 'CodexAutoResume-v1.5.0-source.zip'); NotesPath=(Join-Path $originalRoot 'RELEASE_NOTES.md'); OutputRoot=$outputRoot }
+$originalRoot = Join-Path $projectRoot 'release\v1.1.4'
+$inputs = @{ Version='1.1.4'; ExecutablePath=(Join-Path $originalRoot 'CodexAutoResume-v1.1.4-windows-x64.exe'); SourceArchivePath=(Join-Path $originalRoot 'CodexAutoResume-v1.1.4-source.zip'); NotesPath=(Join-Path $originalRoot 'RELEASE_NOTES.md'); OutputRoot=$outputRoot }
 $checks = 0
 function Check([bool]$Ok, [string]$Description) { if (-not $Ok) { throw $Description }; $script:checks++; Write-Output ('PASS: ' + $Description) }
 function Digest([string]$Directory) { (@(Get-ChildItem -LiteralPath $Directory -File | Sort-Object Name | ForEach-Object { $_.Name + ':' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join '|') }
 function Must-Fail([scriptblock]$Action, [string]$Description) { $rejected=$false; try { & $Action | Out-Null } catch { $rejected=$true }; Check $rejected $Description }
 & $publisher @inputs -PromoteLatest
-$archive = Join-Path $outputRoot 'v1.5.0'
+$archive = Join-Path $outputRoot 'v1.1.4'
 $originalDigest = Digest $archive
 $latest = Get-Content -LiteralPath (Join-Path $outputRoot 'latest.json') -Raw | ConvertFrom-Json
-Check ($latest.version -eq '1.5.0') 'latest points to published version'
+Check ($latest.version -eq '1.1.4') 'latest points to published version'
 Check ((Get-FileHash -LiteralPath (Join-Path $outputRoot 'CodexAutoResume.exe')).Hash -eq $latest.sha256) 'latest EXE exactly matches versioned asset'
 $checksumLines = @(Get-Content -LiteralPath (Join-Path $archive 'SHA256SUMS.txt'))
 Check ($checksumLines.Count -eq 4) 'checksums include executable, source, notes and metadata'
@@ -28,18 +28,18 @@ Check ((Digest $archive) -eq $originalDigest) 'rejected publication leaves old a
 $mismatch = $inputs.Clone(); $mismatch.Version = '1.5.9'
 Must-Fail { & $publisher @mismatch } 'mismatched EXE version is rejected'
 Check (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'v1.5.9'))) 'version rejection creates no misleading archive'
-$wrongSource = $inputs.Clone(); $wrongSource.SourceArchivePath = Join-Path $projectRoot 'packages\CodexAutoResume-1.4.0-source.zip'
+$wrongSource = $inputs.Clone(); $wrongSource.SourceArchivePath = Join-Path $projectRoot 'packages\CodexAutoResume-1.1.3-source.zip'
 Must-Fail { & $publisher @wrongSource } 'source ZIP from another version is rejected'
-$oldRoot = Join-Path $projectRoot 'release\v1.4.0'
-$oldInputs = @{ Version='1.4.0'; ExecutablePath=(Join-Path $oldRoot 'CodexAutoResume-v1.4.0-windows-x64.exe'); SourceArchivePath=(Join-Path $oldRoot 'CodexAutoResume-v1.4.0-source.zip'); NotesPath=(Join-Path $oldRoot 'RELEASE_NOTES.md'); BinaryOrigin='rebuilt-from-archived-source'; OutputRoot=$outputRoot }
+$oldRoot = Join-Path $projectRoot 'release\v1.1.3'
+$oldInputs = @{ Version='1.1.3'; ExecutablePath=(Join-Path $oldRoot 'CodexAutoResume-v1.1.3-windows-x64.exe'); SourceArchivePath=(Join-Path $oldRoot 'CodexAutoResume-v1.1.3-source.zip'); NotesPath=(Join-Path $oldRoot 'RELEASE_NOTES.md'); BinaryOrigin='rebuilt-from-archived-source'; OutputRoot=$outputRoot }
 & $publisher @oldInputs
-Check ((Get-Content -LiteralPath (Join-Path $outputRoot 'latest.json') -Raw | ConvertFrom-Json).version -eq '1.5.0') 'importing history does not downgrade latest'
+Check ((Get-Content -LiteralPath (Join-Path $outputRoot 'latest.json') -Raw | ConvertFrom-Json).version -eq '1.1.4') 'importing history does not downgrade latest'
 Must-Fail { & $publisher @oldInputs -PromoteLatest } 'accidental latest downgrade is rejected'
 $index = Get-Content -LiteralPath (Join-Path $outputRoot 'releases.json') -Raw | ConvertFrom-Json
-Check ($index.releases.Count -eq 2 -and $index.releases[0].version -eq '1.5.0' -and $index.releases[1].binaryOrigin -eq 'rebuilt-from-archived-source') 'index sorts versions and labels historical rebuild origin'
+Check ($index.releases.Count -eq 2 -and $index.releases[0].version -eq '1.1.4' -and $index.releases[1].binaryOrigin -eq 'rebuilt-from-archived-source') 'index sorts versions and labels historical rebuild origin'
 $lock = [IO.File]::Open((Join-Path $outputRoot '.publish.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
 try { Must-Fail { & $publisher @inputs } 'concurrent publication cannot mutate a locked release root' } finally { $lock.Dispose() }
-$archivedExe = Join-Path $archive 'CodexAutoResume-v1.5.0-windows-x64.exe'
+$archivedExe = Join-Path $archive 'CodexAutoResume-v1.1.4-windows-x64.exe'
 [IO.File]::AppendAllText($archivedExe, 'tampered-fixture')
 $tamperedDigest = Digest $archive
 Must-Fail { & $publisher @inputs } 'corrupt archived asset is detected rather than silently replaced'
