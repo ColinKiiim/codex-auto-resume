@@ -48,7 +48,7 @@ namespace CodexAutoResume
 
         public MainForm()
         {
-            Text = "CodexAutoResume 1.2.2 · 自动定位 · 单文件便携版";
+            Text = "CodexAutoResume 1.1.0 · 自动定位 · 单文件便携版";
             ShowInTaskbar = true; ShowIcon = true; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10);
             ClientSize = new Size(760, 640); MinimumSize = new Size(720, 640);
@@ -227,7 +227,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "CodexAutoResume 1.2.2 · 单文件便携版\n\n复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本和本说明均内置，不需要复制图片、源码或配置文件。\n依赖 Windows 自带的 .NET Framework 4.x，不需要安装 Python。\n\n切到 Codex，按 " + shortcut + "+F8 自动定位并开始观察。\n多个候选区域会弹窗，必须选择并点击确认后才继续。\n自动模式每次重新定位，窗口位置和大小可以变化。\n备用手动标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察模式核对结果，再勾选允许自动点击。\n\n向右三角形：自动恢复一次；方块：运行中，不点击；\n向上箭头：发送模式，不点击；声波：语音模式，不点击。\n未知图形不点击。Codex 必须在前台可见。\n每次重启工具后需要按快捷键连接前台 Codex。\n\n日志和主动保存的诊断图位于：\n" + logDirectory + "\n\nMIT 开源许可：在主窗口按 F3 查看。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "CodexAutoResume 1.1.0 · 单文件便携版\n\n复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本和本说明均内置，不需要复制图片、源码或配置文件。\n依赖 Windows 自带的 .NET Framework 4.x，不需要安装 Python。\n\n切到 Codex，按 " + shortcut + "+F8 自动定位并开始观察。\n多个候选区域会弹窗，必须选择并点击确认后才继续。\n自动模式每次重新定位，窗口位置和大小可以变化。\n备用手动标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察模式核对结果，再勾选允许自动点击。\n\n向右三角形：自动恢复一次；方块：运行中，不点击；\n向上箭头：发送模式，不点击；声波：语音模式，不点击。\n未知图形不点击。Codex 必须在前台可见。\n每次重启工具后需要按快捷键连接前台 Codex。\n\n日志和主动保存的诊断图位于：\n" + logDirectory + "\n\nMIT 开源许可：在主窗口按 F3 查看。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {

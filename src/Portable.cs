@@ -6,8 +6,8 @@ using System.Reflection;
 [assembly: AssemblyTitle("CodexAutoResume")]
 [assembly: AssemblyDescription("Portable Codex resume button monitor")]
 [assembly: AssemblyProduct("CodexAutoResume")]
-[assembly: AssemblyVersion("1.2.2.0")]
-[assembly: AssemblyFileVersion("1.2.2.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 CodexAutoResume contributors. MIT License.")]
 
 namespace CodexAutoResume
@@ -41,7 +41,7 @@ namespace CodexAutoResume
                 Recognizer recognizer = new Recognizer();
                 string[] names = { "resume", "running", "send", "send-current", "voice" };
                 ButtonState[] expected = { ButtonState.Resume, ButtonState.Running, ButtonState.Send, ButtonState.Send, ButtonState.Voice };
-                string report = "CodexAutoResume 1.2.2 portable self-check" + Environment.NewLine;
+                string report = "CodexAutoResume 1.1.0 portable self-check" + Environment.NewLine;
                 if (DesktopIdentity.CurrentId() != DesktopIdentity.AppId) throw new InvalidOperationException("Taskbar identity was not set.");
                 report += "PASS: independent taskbar AppUserModelID = " + DesktopIdentity.CurrentId() + Environment.NewLine;
                 using (Icon icon = DesktopIdentity.LoadIcon()) if (icon.Width < 16) throw new InvalidOperationException("Embedded icon invalid.");
