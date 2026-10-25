@@ -99,10 +99,53 @@ namespace CodexAutoResume
             MonitoringTests();
             SamplerTests();
             LocatorTests(r, root);
+            CitationTests(r, root);
             IdentityTests();
             string result = "Checks: " + checks + "; failures: " + failures;
             Console.WriteLine(result); File.WriteAllText(Path.Combine(root, "tests", "last-result.txt"), DateTime.Now.ToString("O") + Environment.NewLine + result + Environment.NewLine);
             return failures == 0 ? 0 : 1;
+        }
+        static void CitationTests(Recognizer r, string root)
+        {
+            // Numbered citations can use the same blue background as the composer.
+            // Exercise rasterized digits, fonts, weights and display scales together
+            // with real buttons, so filtering cannot merely pick the lowest circle.
+            foreach (string family in new string[] { "Segoe UI", "Arial", "Microsoft YaHei UI" })
+            foreach (FontStyle style in new FontStyle[] { FontStyle.Regular, FontStyle.Bold })
+            foreach (double scale in new double[] { .75, 1, 1.5 })
+            for (int number = 0; number <= 99; number++)
+            using (Bitmap badge = new Bitmap((int)(64 * scale), (int)(64 * scale)))
+            using (Graphics g = Graphics.FromImage(badge))
+            using (Font font = new Font(family, (number < 10 ? 15 : 12) * (float)scale, style, GraphicsUnit.Pixel))
+            using (StringFormat format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            using (Brush blue = new SolidBrush(Color.FromArgb(55, 125, 245)))
+            {
+                g.Clear(Color.FromArgb(24, 24, 24)); g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                g.FillEllipse(blue, (float)(14 * scale), (float)(14 * scale), (float)(36 * scale), (float)(36 * scale));
+                g.DrawString(number.ToString(), font, Brushes.White, new RectangleF((float)(14 * scale), (float)(14 * scale), (float)(36 * scale), (float)(36 * scale)), format);
+                string label = "citation " + number + " " + family + " " + style + " scale=" + scale;
+                Detection detection = r.Classify(badge);
+                Check(detection.State == ButtonState.Unknown, label + " is not a button: " + detection);
+                Check(r.FindButtons(badge).Count == 0, label + " excluded from automatic candidates");
+            }
+            foreach (string name in new string[] { "resume", "running", "send-current", "voice" })
+            using (Bitmap area = new Bitmap(600, 180))
+            using (Graphics g = Graphics.FromImage(area))
+            using (Bitmap sample = new Bitmap(Path.Combine(root, "assets", name + "-reference.png")))
+            using (Font font = new Font("Segoe UI", 15, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (Brush blue = new SolidBrush(Color.FromArgb(55, 125, 245)))
+            {
+                g.Clear(Color.FromArgb(24, 24, 24)); g.SmoothingMode = SmoothingMode.AntiAlias;
+                for (int i = 1; i <= 9; i++)
+                {
+                    g.FillEllipse(blue, 15 + i * 48, 20, 36, 36);
+                    g.DrawString(i.ToString(), font, Brushes.White, 25 + i * 48, 27);
+                }
+                g.DrawImageUnscaled(sample, 90, 95);
+                var buttons = r.FindButtons(area);
+                Check(buttons.Count == 1 && buttons[0].Badge.Y >= 95, "real " + name + " remains the only candidate beside citations");
+            }
         }
         static void IdentityTests()
         {
@@ -120,14 +163,17 @@ namespace CodexAutoResume
         {
             foreach (string name in new string[] { "resume", "running", "send-current", "voice" })
             using (Bitmap sample = new Bitmap(Path.Combine(root, "assets", name + "-reference.png")))
+            foreach (double scale in new double[] { .65, .8, 1, 1.25, 1.5, 2 })
             foreach (int x in new int[] { 60, 420, 780 })
             using (Bitmap area = new Bitmap(900, 300)) using (Graphics g = Graphics.FromImage(area))
             {
-                g.Clear(Color.FromArgb(24, 24, 24)); g.DrawImageUnscaled(sample, x, 180);
+                g.Clear(Color.FromArgb(24, 24, 24)); g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                int width = (int)Math.Round(sample.Width * scale), height = (int)Math.Round(sample.Height * scale);
+                g.DrawImage(sample, new Rectangle(x, 160, width, height));
                 using (Brush blue = new SolidBrush(Color.FromArgb(43, 103, 203))) g.FillRectangle(blue, 200, 30, 250, 50);
                 var buttons = r.FindButtons(area);
-                Check(buttons.Count == 1, "auto locate " + name + " x=" + x);
-                if (buttons.Count == 1) Check(buttons[0].Badge.Left >= x && buttons[0].Badge.Right <= x + sample.Width, "fresh position " + name + " x=" + x);
+                Check(buttons.Count == 1, "auto locate " + name + " x=" + x + " scale=" + scale);
+                if (buttons.Count == 1) Check(buttons[0].Badge.Left >= x && buttons[0].Badge.Right <= x + width, "fresh position " + name + " x=" + x + " scale=" + scale);
             }
             using (Bitmap area = new Bitmap(900, 300)) using (Graphics g = Graphics.FromImage(area))
             using (Bitmap sample = new Bitmap(Path.Combine(root, "assets", "resume-reference.png")))

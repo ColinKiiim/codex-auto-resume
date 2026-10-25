@@ -83,7 +83,7 @@ namespace CodexAutoResume
             d.ButtonBounds = badge; d.Detail = detail; d.IconParts = parts;
             if (shape == null) return d;
             d.SendScore = parts <= 2 ? Math.Max(StrokeSimilarity(shape, sendTemplate), StrokeSimilarity(shape, sendCurrentTemplate)) : 0;
-            d.VoiceScore = parts >= 3 ? StrokeSimilarity(shape, voiceTemplate) : 0;
+            d.VoiceScore = parts >= 3 && VoiceStrokes(shape) ? StrokeSimilarity(shape, voiceTemplate) : 0;
             double other = Math.Max(Similarity(shape, resumeTemplate), Similarity(shape, runningTemplate));
             if (parts <= 2 && TopFraction(shape) < .50 && d.SendScore >= .80 && d.SendScore - Math.Max(other, d.VoiceScore) >= .12) d.State = ButtonState.Send;
             else if (parts >= 3 && parts <= 6 && d.VoiceScore >= .80 && d.VoiceScore - Math.Max(other, d.SendScore) >= .12) d.State = ButtonState.Voice;
@@ -125,8 +125,10 @@ namespace CodexAutoResume
                 using (Bitmap local = image.Clone(crop, PixelFormat.Format32bppArgb))
                 {
                     Detection detection = Classify(local);
-                    // Unknown white icons still count as ambiguous candidates; never silently skip one.
-                    if (detection.ButtonBounds.IsEmpty || detection.IconParts == 0) continue;
+                    // Blue citation badges also contain white glyphs. Only known button
+                    // icons may enter automatic selection; unknown crops remain observable
+                    // through manual calibration without blocking a real button.
+                    if (detection.State == ButtonState.Unknown || detection.ButtonBounds.IsEmpty || detection.IconParts == 0) continue;
                     found.Add(new LocatedButton { Crop = crop, Badge = badge, Detection = detection });
                 }
             }
@@ -244,6 +246,16 @@ namespace CodexAutoResume
         {
             double ab = CoveredFraction(a, b), ba = CoveredFraction(b, a);
             return ab + ba == 0 ? 0 : 2 * ab * ba / (ab + ba);
+        }
+        static bool VoiceStrokes(bool[] shape)
+        {
+            bool[,] mask = new bool[Grid, Grid];
+            for (int y = 0; y < Grid; y++) for (int x = 0; x < Grid; x++) mask[x, y] = shape[y * Grid + x];
+            // A waveform is separate narrow vertical bars. Resampled digits can
+            // split into several parts too, but retain wide loops or curves.
+            foreach (Component part in Components(mask))
+                if (part.Bounds.Width > Grid / 4 || part.Bounds.Height < part.Bounds.Width) return false;
+            return true;
         }
         static double TopFraction(bool[] shape)
         {

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [Parameter(Mandatory = $true)][string]$ExecutablePath,
     [Parameter(Mandatory = $true)][string]$SourceArchivePath,
@@ -110,15 +110,14 @@ if ($PromoteLatest) {
 $versions = @(Get-ChildItem -LiteralPath $OutputRoot -Directory | Where-Object { $_.Name -match '^v\d+\.\d+\.\d+$' } | ForEach-Object { Assert-Release $_.FullName } | Sort-Object { [version]$_.version } -Descending)
 $latestVersion = if (Test-Path -LiteralPath $latestPath) { (Get-Content -LiteralPath $latestPath -Raw | ConvertFrom-Json).version } else { $null }
 Write-Atomic (Join-Path $OutputRoot 'releases.json') ([ordered]@{ schemaVersion = 1; latest = $latestVersion; releases = $versions } | ConvertTo-Json -Depth 8)
-$readme = @('# CodexAutoResume 历史发布', '', '最新版入口：[`CodexAutoResume.exe`](CodexAutoResume.exe)。迁移到新电脑只需复制这个 EXE。', '', '版本目录保留对应 EXE、源码 ZIP、发布说明、SHA256SUMS.txt 和 release.json；不会被后续版本覆盖。', '', '“历史源码补构建”表示从留存源码重新编译，不是当年原始 EXE；校验值对应当前归档文件。旧版可能含已修复问题，日常使用推荐最新版。', '', '| 版本 | 类型 | Windows x64 | 源码 | 发布说明 | 校验值 |', '|---|---|---|---|---|---|')
+$readme = @('# CodexAutoResume 历史发布', '', '最新版入口：[`CodexAutoResume.exe`](CodexAutoResume.exe)。迁移到新电脑只需复制这个 EXE。', '', '每个版本提供 EXE、源码 ZIP、发布说明和 SHA256 校验。', '', '| 版本 | Windows x64 | 源码 | 发布说明 | 校验值 |', '|---|---|---|---|---|')
 foreach ($item in $versions) {
     $label = 'v' + $item.version
     if ($item.version -eq $latestVersion) { $label += '（最新版）' }
-    $origin = if ($item.binaryOrigin -eq 'rebuilt-from-archived-source') { '历史源码补构建' } else { '原始发布文件' }
     $program = $item.assets | Where-Object { $_.kind -eq 'portable-executable' }
     $sources = $item.assets | Where-Object { $_.kind -eq 'source' }
-    $readme += ('| ' + $label + ' | ' + $origin + ' | [EXE](' + $item.tag + '/' + $program.name + ') | [ZIP](' + $item.tag + '/' + $sources.name + ') | [说明](' + $item.tag + '/RELEASE_NOTES.md) | [SHA256](' + $item.tag + '/SHA256SUMS.txt) |')
+    $readme += ('| ' + $label + ' | [EXE](' + $item.tag + '/' + $program.name + ') | [ZIP](' + $item.tag + '/' + $sources.name + ') | [说明](' + $item.tag + '/RELEASE_NOTES.md) | [SHA256](' + $item.tag + '/SHA256SUMS.txt) |')
 }
-$readme += @('', '机器可读索引：[`releases.json`](releases.json)、[`latest.json`](latest.json)。另见 [更新记录](../CHANGELOG.md) 与 [发布流程](../docs/releasing.md)。', '', '这里是本地发布目录；文件可作为 GitHub Release 的附件上传，EXE 尚未进行代码签名。')
+$readme += @('', '版本索引：[`releases.json`](releases.json)、[`latest.json`](latest.json)。另见 [更新记录](../CHANGELOG.md) 与 [发布流程](../docs/releasing.md)。')
 Write-Atomic (Join-Path $OutputRoot 'README.md') (($readme -join "`n") + "`n")
 } finally { $publicationLock.Dispose() }

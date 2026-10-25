@@ -1,10 +1,10 @@
-# CodexAutoResume 1.5.2
+# CodexAutoResume 1.5.3
 
-识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.5.2-source.zip`；完整许可见 [LICENSE](LICENSE)。
+识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。MIT 开源，独立任务栏图标，单个 EXE 便携使用。源码包：`packages/CodexAutoResume-1.5.3-source.zip`；完整许可见 [LICENSE](LICENSE)。
 
 ## 历史版本与发布
 
-下载与回退见 [历史发布列表](release/README.md)，变化见 [CHANGELOG](CHANGELOG.md)。1.5.1 起每个版本保留独立 EXE、源码 ZIP、发布说明、SHA256 与元数据，后续版本不会覆盖。1.2.2–1.4.0 已从历史源码补构建并标注来源，1.5.0 原始文件已保留。最新版快捷入口继续使用 `release/CodexAutoResume.exe`。发布流程见 [releasing.md](docs/releasing.md)。
+下载与回退见 [历史发布列表](release/README.md)，变化见 [CHANGELOG](CHANGELOG.md)。1.5.1 起每个版本保留独立 EXE、源码 ZIP、发布说明、SHA256 与元数据，后续版本不会覆盖。最新版快捷入口继续使用 `release/CodexAutoResume.exe`。发布流程见 [releasing.md](docs/releasing.md)。
 
 ## 开始使用
 
@@ -25,7 +25,8 @@
 | 向上箭头 | 发送状态，不点击 |
 | 声波图标 | 语音状态，不点击 |
 | 等待用户回答 | 记录状态，约每 2 秒检查面板是否消失；不选答案、不跳过、不提交 |
-| 未知、黑屏或暂时无画面 | 不点击，继续等待 |
+| 引用编号或其他未知图形 | 不列为自动定位候选；继续寻找按钮 |
+| 黑屏或暂时无画面 | 不点击，继续等待 |
 
 问答识别覆盖右下角显示“跳过”以及输入文字后显示“提交”的情况。结合“正在询问问题 / 正在等待你的回答”、分页和底部动作文字判断，避免仅凭一个“提交”或普通消息中的推荐字样判断。面板消失自动恢复图标检测。
 
