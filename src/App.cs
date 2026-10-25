@@ -32,6 +32,16 @@ namespace CodexAutoResume
         readonly Recognizer recognizer = new Recognizer();
         readonly CaptureSampler sampler = new CaptureSampler(WindowCapture.Snapshot);
         readonly QuestionDetector questions = new QuestionDetector();
+        readonly MonitorActivity activity = new MonitorActivity();
+        readonly MonitorPulse uiPulse = new MonitorPulse(DateTime.UtcNow);
+        readonly MonitorPulse filePulse = new MonitorPulse(DateTime.UtcNow);
+        readonly Timer healthTimer = new Timer();
+        readonly Label health = new Label { AutoSize = false, Dock = DockStyle.Bottom, Height = 28, ForeColor = Color.DimGray };
+        readonly ComboBox heartbeatInterval = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 85 };
+        readonly MonitorLog journal = new MonitorLog(Path.Combine(Portable.DataDirectory, "logs"));
+        bool regionChoiceRequested;
+        string lastCaptureError;
+        DateTime lastCaptureErrorAt;
         DateTime nextMonitor;
         bool questionReported;
         ResumeGate gate = new ResumeGate();
@@ -63,7 +73,7 @@ namespace CodexAutoResume
             Text = "CodexAutoResume " + Portable.Version + " · 后台模式（实验） · 单文件便携版";
             ShowInTaskbar = true; ShowIcon = true; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10);
-            ClientSize = new Size(760, 720); MinimumSize = new Size(720, 720);
+            ClientSize = new Size(800, 790); MinimumSize = new Size(780, 780);
             StartPosition = FormStartPosition.CenterScreen;
             TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 7 };
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
@@ -71,7 +81,7 @@ namespace CodexAutoResume
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.Controls.Add(new Label { Text = "Codex Auto Resume", Font = new Font(Font.FontFamily, 20, FontStyle.Bold), AutoSize = true }, 0, 0);
             layout.Controls.Add(instructions, 0, 1);
@@ -84,19 +94,25 @@ namespace CodexAutoResume
             Button check = new Button { Text = "本机自检", AutoSize = true };
             Button backgroundCheck = new Button { Text = "后台自测 (F4)", AutoSize = true };
             Button chooseWindow = new Button { Text = "选择窗口", AutoSize = true };
+            Button chooseRegion = new Button { Text = "选择区域", AutoSize = true };
+            Button openLogs = new Button { Text = "打开日志", AutoSize = true };
             controls.Controls.Add(stop); controls.Controls.Add(showDemo); controls.Controls.Add(save);
             controls.Controls.Add(help);
             controls.Controls.Add(check);
             controls.Controls.Add(backgroundCheck);
             controls.Controls.Add(chooseWindow);
+            controls.Controls.Add(chooseRegion); controls.Controls.Add(openLogs);
             layout.Controls.Add(controls, 0, 2);
             FlowLayoutPanel options = new FlowLayoutPanel { Dock = DockStyle.Fill };
             options.Controls.Add(automatic); options.Controls.Add(new Label { Text = "手动取样(px)", AutoSize = true, Padding = new Padding(12, 4, 0, 0) }); options.Controls.Add(cropSize);
-            options.SetFlowBreak(cropSize, true); options.Controls.Add(background);
+            heartbeatInterval.Items.AddRange(new object[] { "1 分钟", "5 分钟" }); heartbeatInterval.SelectedIndex = 0;
+            options.Controls.Add(new Label { Text = "状态提醒", AutoSize = true, Padding = new Padding(8, 4, 0, 0) }); options.Controls.Add(heartbeatInterval);
+            options.SetFlowBreak(heartbeatInterval, true); options.Controls.Add(background);
             layout.Controls.Add(options, 0, 3);
             FlowLayoutPanel images = new FlowLayoutPanel { Dock = DockStyle.Fill };
             images.Controls.Add(preview); images.Controls.Add(scores); layout.Controls.Add(images, 0, 4);
-            layout.Controls.Add(status, 0, 5); layout.Controls.Add(logBox, 0, 6); Controls.Add(layout);
+            Panel statusArea = new Panel { Dock = DockStyle.Fill }; statusArea.Controls.Add(status); statusArea.Controls.Add(health);
+            layout.Controls.Add(statusArea, 0, 5); layout.Controls.Add(logBox, 0, 6); Controls.Add(layout);
             toggle.Click += delegate { Toggle(); };
             stop.Click += delegate { Stop("已手动停止"); };
             showDemo.Click += delegate { if (diagnosing) return; if (demo == null || demo.IsDisposed) demo = new DemoForm(shortcut); demo.Show(); demo.Activate(); Connect(Target.FromWindow(demo.Handle, true)); };
@@ -105,12 +121,23 @@ namespace CodexAutoResume
             check.Click += delegate { ShowSelfCheck(); };
             backgroundCheck.Click += delegate { ShowBackgroundSelfCheck(); };
             chooseWindow.Click += delegate { if (!diagnosing) { generation++; target = null; waitingForChoice = false; monitoring = true; nextDiscovery = DateTime.MinValue; Discover(); } };
+            chooseRegion.Click += delegate
+            {
+                if (diagnosing || target == null) { SetStatus("请先连接目标窗口，再选择区域"); return; }
+                if (!monitoring) { SetStatus("监测已手动停止，请先开始观察再选择区域"); return; }
+                target.RequestRegionChoice(); regionChoiceRequested = true; nextMonitor = DateTime.MinValue;
+                SetStatus(background.Checked ? "已请求手动选择区域；等待本轮取样，不会停止持续扫描" : "已请求手动选择区域；请切回 Codex，等待本轮取样");
+            };
+            openLogs.Click += delegate { try { Directory.CreateDirectory(logDirectory); System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(logDirectory) { UseShellExecute = true }); } catch (Exception e) { SetStatus("无法打开日志目录：" + e.Message); } };
+            heartbeatInterval.SelectedIndexChanged += delegate { uiPulse.Reset(DateTime.UtcNow); };
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } else if (e.KeyCode == Keys.F4) { ShowBackgroundSelfCheck(); e.Handled = true; } };
             automatic.CheckedChanged += delegate { ActivateOptions(automatic.Checked ? "自动点击已开启：持续检测三角形，点击间隔至少 5 秒" : "仅观察：持续捕获，不会点击"); };
             background.CheckedChanged += delegate { if (!background.Checked) WindowCapture.StopCapture(); ActivateOptions(background.Checked ? "后台持续捕获已开启，允许完全遮挡，不需要快捷键" : "前台模式已开启：等待目标窗口在前台可见"); };
             cropSize.ValueChanged += delegate { if (target != null && !target.Automatic) { generation++; target.CropSize = (int)cropSize.Value; gate.BreakStreak(); } };
             timer.Interval = 400; timer.Tick += delegate { TickMonitor(); }; timer.Start();
+            healthTimer.Interval = 1000; healthTimer.Tick += delegate { HealthTick(); }; healthTimer.Start();
+            journal.Write("diagnostics.log", "startup", "version=" + Portable.Version + "; heartbeat=1min; detail=10sec", DateTime.UtcNow);
             Shown += delegate
             {
                 bool registered = false;
@@ -125,7 +152,7 @@ namespace CodexAutoResume
                     if (a && b && c && d) { shortcut = names[i]; registered = true; break; }
                     for (int j = 1; j <= 4; j++) Native.UnregisterHotKey(Handle, j);
                 }
-                instructions.Text = "1. 自动寻找 Codex 并持续观察；勾选“允许自动点击”即可开始，无需快捷键。\n2. 后台模式允许完全遮挡；多窗口或多个按钮区域须手动选择确认。\n3. 暂时未知、拖动窗口或未确认方块均继续捕获；只在你手动停止后暂停。\n备用：" + shortcut + "+F8 连接前台窗口；F7 手动标定；F9 开始/暂停；F10 停止。";
+                instructions.Text = "1. 自动寻找 Codex 并观察；勾选允许自动点击即开始，无需快捷键。\n2. 多个按钮候选时继续扫描、不点击；恢复单候选后自动继续，可手动选择区域。\n3. 状态提醒可选每1/5分钟；详细日志每10秒记录，旧画面不会当作当前状态。\n备用：" + shortcut + "+F8 连接前台窗口；F7 标定；F9 开始/暂停；F10 停止。";
                 monitoring = true; toggle.Text = "暂停监测";
                 SetStatus(registered ? "正在自动寻找 Codex；勾选自动点击即可开始，快捷键可选" : "快捷键被占用；按钮和自动检测仍可使用");
             };
@@ -157,6 +184,7 @@ namespace CodexAutoResume
             try
             {
                 target = Target.Calibrate(demo != null && !demo.IsDisposed, (int)cropSize.Value);
+                activity.ResetSource();
                 gate = new ResumeGate(); lastBadge = Rectangle.Empty;
                 SetStatus("备用手动标定成功；正在观察。按 " + shortcut + "+F8 可切回自动定位。");
                 Rectangle r; string reason;
@@ -171,6 +199,7 @@ namespace CodexAutoResume
             try
             {
                 target = Target.AttachForeground(demo != null && !demo.IsDisposed);
+                activity.ResetSource();
                 gate = new ResumeGate(); lastBadge = Rectangle.Empty;
                 monitoring = true; toggle.Text = "停止观察";
                 SetStatus("自动定位已启用，正在寻找按钮；窗口移动或调整大小后会重新定位");
@@ -180,6 +209,7 @@ namespace CodexAutoResume
         void Connect(Target connected)
         {
             questions.Reset(); questionReported = false; nextMonitor = DateTime.MinValue;
+            regionChoiceRequested = false; activity.ResetSource();
             generation++; target = connected; gate = new ResumeGate(); lastBadge = Rectangle.Empty;
             waitingForChoice = false; monitoring = true; toggle.Text = "暂停监测";
             SetStatus(automatic.Checked ? "已连接窗口，自动点击中；暂时捕获不到也会持续监测" : "已连接窗口，持续观察；勾选允许自动点击即可生效");
@@ -215,6 +245,7 @@ namespace CodexAutoResume
         int ChooseRegion(Bitmap scan, System.Collections.Generic.List<LocatedButton> candidates)
         {
             gate.BreakStreak();
+            regionChoiceRequested = false;
             int revision = generation;
             using (RegionPicker picker = new RegionPicker(scan, candidates))
             { DialogResult result = picker.ShowDialog(this); return result == DialogResult.OK && revision == generation && monitoring ? picker.SelectedIndex : -1; }
@@ -233,6 +264,8 @@ namespace CodexAutoResume
             WindowCapture.StopCapture();
             generation++; monitoring = false; gate.BreakStreak(); toggle.Text = "开始观察"; SetStatus(message);
             questions.Reset();
+            regionChoiceRequested = false; if (target != null) target.CancelRegionChoice();
+            HealthTick();
         }
         async void TickMonitor()
         {
@@ -248,11 +281,14 @@ namespace CodexAutoResume
                 if (questions.Waiting && await CheckForegroundQuestion(connected, revision)) return;
                 if (!monitoring || target != connected || generation != revision) return;
                 Rectangle crop; string reason;
-                if (!target.Locate(recognizer, ChooseRegion, out crop, out reason))
+                activity.Start(DateTime.UtcNow);
+                if (!target.Locate(recognizer, regionChoiceRequested ? (Func<Bitmap, System.Collections.Generic.List<LocatedButton>, int>)ChooseRegion : null, out crop, out reason))
                 {
                     if (!monitoring || target != connected || generation != revision) return;
+                    if (reason == "正在自动寻找蓝色圆按钮；找不到时可用手动标定备用" || reason == "候选区域需要用户确认") activity.Foreground(DateTime.UtcNow);
                     gate.BreakStreak();
-                    if (reason == "已取消区域选择") { waitingForChoice = true; target = null; SetStatus("区域选择已取消；点击“选择窗口”重新选择，等待期间不会点击"); return; }
+                    if (reason == "已取消区域选择") { SetStatus("已取消手动区域选择；保持连接，持续扫描，恢复单候选后自动继续"); return; }
+                    if (reason == "候选区域需要用户确认") { CandidateWait(); return; }
                     gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
                     if (reason == "正在自动寻找蓝色圆按钮；找不到时可用手动标定备用" && await CheckForegroundQuestion(connected, revision)) return;
                     if (!monitoring || target != connected || generation != revision) return;
@@ -261,6 +297,7 @@ namespace CodexAutoResume
                 }
                 Detection d;
                 using (Bitmap b = Native.Capture(crop)) { d = recognizer.Classify(b); UpdatePreview(b, d); }
+                activity.Foreground(DateTime.UtcNow); activity.Recognized(d.State);
                 Rectangle badgeScreen = d.ButtonBounds; badgeScreen.Offset(crop.Location);
                 if (!d.ButtonBounds.IsEmpty && !lastBadge.IsEmpty &&
                     (Math.Abs(badgeScreen.X - lastBadge.X) > 2 || Math.Abs(badgeScreen.Y - lastBadge.Y) > 2)) gate.BreakStreak();
@@ -289,12 +326,51 @@ namespace CodexAutoResume
                 if (clicked) { gate.MarkAttempt(DateTime.UtcNow); RefreshScores(d); SetStatus("已发送一次鼠标点击，正在检查是否变为方块"); }
                 else { gate.BreakStreak(); SetStatus("点击前状态变化，已取消本次点击并重新观察"); }
             }
-            catch (Exception e) { gate.BreakStreak(); SetStatus("本次捕获或点击暂不可用，持续监测：" + e.Message); }
+            catch (Exception e) { activity.Errors++; gate.BreakStreak(); SetStatus("本次捕获或点击暂不可用，持续监测：" + e.Message); }
             finally { updating = false; }
         }
 
         bool Current(Target connected, int revision)
         { return !IsDisposed && monitoring && background.Checked && target == connected && generation == revision; }
+
+        void CandidateWait()
+        {
+            gate.BreakStreak(); gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
+            int count = target == null ? -1 : target.CandidateCount;
+            SetStatus(count > 1 ? "发现多个候选，暂停点击但持续扫描；恢复单候选后自动继续，也可点“选择区域”" : "原选区域已变化，持续扫描；原区域恢复后继续，或点“选择区域”重选");
+        }
+        async Task<WindowFrame> ReadBackground(Target connected, int revision)
+        {
+            activity.Start(DateTime.UtcNow);
+            try
+            {
+                WindowFrame frame = await sampler.ReadAsync(connected.Window);
+                if (Current(connected, revision)) activity.Background(frame);
+                return frame;
+            }
+            catch (Exception e)
+            {
+                if (Current(connected, revision))
+                {
+                    activity.Errors++; string error = e.GetType().Name + ": " + e.Message; DateTime now = DateTime.UtcNow;
+                    if (error != lastCaptureError || (now - lastCaptureErrorAt).TotalSeconds >= 10) { lastCaptureError = error; lastCaptureErrorAt = now; journal.Write("diagnostics.log", "capture-error", error, now); }
+                }
+                throw;
+            }
+        }
+        void HealthTick()
+        {
+            DateTime now = DateTime.UtcNow;
+            string summary = activity.Summary(now, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + "；当前状态=" + status.Text;
+            health.Text = (monitoring ? "检测开启" : diagnosing ? "自测中" : "已停止") + " · 完成取样 " + activity.Completed + " · 上次取样 " + MonitorActivity.Age(activity.LastSample, now) + "前 · " + (background.Checked ? "新帧" : "屏幕取样") + " " + MonitorActivity.Age(activity.LastContent, now) + "前" + (journal.WriteFailed ? " · 日志写入失败" : "");
+            health.ForeColor = background.Checked && activity.LastContent != DateTime.MinValue && (now - activity.LastContent).TotalSeconds > 5 ? Color.DarkOrange : Color.DimGray;
+            if (filePulse.Due(now, TimeSpan.FromSeconds(10)))
+            {
+                string identity = target == null ? "unbound" : "hwnd=" + target.Window.ToInt64().ToString("X") + "; pid=" + target.ProcessId;
+                journal.Write("diagnostics.log", "heartbeat", summary + "; " + identity + "; last-sample-utc=" + activity.LastSample.ToString("O") + "; last-content-utc=" + activity.LastContent.ToString("O") + "; sessions=" + WindowCapture.SessionStarts + "; pool-refresh=" + WindowCapture.PoolRefreshes + "; watchdog=" + WindowCapture.WatchdogRecoveries + "; native-worker-busy=" + sampler.IsBusy, now);
+            }
+            if (monitoring && uiPulse.Due(now, TimeSpan.FromMinutes(heartbeatInterval.SelectedIndex == 1 ? 5 : 1))) AppendVisible("心跳：" + summary, "heartbeat");
+        }
 
         bool RecordQuestion(bool waiting)
         {
@@ -304,6 +380,7 @@ namespace CodexAutoResume
                 return false;
             }
             questionReported = true;
+            activity.LastIcon = "等待用户回答";
             gate.BreakStreak(); gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
             nextMonitor = DateTime.UtcNow.AddSeconds(2);
             scores.Text = "等待用户回答\n问答面板已识别，降低检测频率\n不会选择、跳过或提交答案\n已点击：" + gate.Attempts + "    已确认恢复：" + gate.Verified;
@@ -324,7 +401,13 @@ namespace CodexAutoResume
         void BackgroundWait(string reason)
         {
             gate.BreakStreak(); gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
-            if (reason == "已取消区域选择") { waitingForChoice = true; target = null; SetStatus("区域选择已取消；点击“选择窗口”重新选择，确认前不会点击"); }
+            if (reason == "画面未更新，当前状态待确认；持续监测并尝试恢复捕获")
+            {
+                status.Text = reason;
+                scores.Text = "画面未更新，当前状态待确认\n最近识别：" + activity.LastIcon + "\n旧画面不用于点击或方块确认\n已点击：" + gate.Attempts + "    已确认恢复：" + gate.Verified;
+            }
+            else if (reason == "候选区域需要用户确认") CandidateWait();
+            else if (reason == "已取消区域选择") SetStatus("已取消手动区域选择；保持连接，持续扫描，恢复单候选后自动继续");
             else SetStatus(reason);
         }
 
@@ -337,11 +420,12 @@ namespace CodexAutoResume
                 string reason;
                 if (!connected.ValidateIdentity(out reason)) { WindowCapture.StopCapture(); BackgroundWait(reason); return; }
                 WindowFrame captured;
-                try { captured = await sampler.ReadAsync(connected.Window); }
+                try { captured = await ReadBackground(connected, revision); }
                 catch (Exception e) { if (Current(connected, revision)) BackgroundWait(e.Message); return; }
                 using (WindowFrame frame = captured)
                 {
                     if (!Current(connected, revision)) return;
+                    if (!frame.ContentFresh(DateTime.UtcNow)) { BackgroundWait("画面未更新，当前状态待确认；持续监测并尝试恢复捕获"); return; }
                     bool questionChecked = questions.Waiting;
                     if (questionChecked)
                     {
@@ -350,7 +434,7 @@ namespace CodexAutoResume
                         if (RecordQuestion(waiting)) return;
                     }
                     Rectangle crop;
-                    if (!connected.LocateBackground(frame, recognizer, ChooseRegion, out crop, out reason))
+                    if (!connected.LocateBackground(frame, recognizer, regionChoiceRequested ? (Func<Bitmap, System.Collections.Generic.List<LocatedButton>, int>)ChooseRegion : null, out crop, out reason))
                     {
                         if (!Current(connected, revision)) return;
                         if (!questionChecked && reason == "后台捕获正常，正在寻找蓝色圆按钮")
@@ -365,6 +449,7 @@ namespace CodexAutoResume
                     Detection d;
                     using (Bitmap b = frame.Image.Clone(local, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
                     { d = recognizer.Classify(b); UpdatePreview(b, d); }
+                    activity.Recognized(d.State);
                     Rectangle badge = d.ButtonBounds; badge.Offset(crop.Location);
                     if (!lastBadge.IsEmpty && (Math.Abs(badge.X - lastBadge.X) > 2 || Math.Abs(badge.Y - lastBadge.Y) > 2)) gate.BreakStreak();
                     lastBadge = badge;
@@ -374,7 +459,7 @@ namespace CodexAutoResume
                     if (!ready)
                     { SetStatus("后台捕获：" + Portable.StateName(d.State) + (d.State == ButtonState.Resume ? "，等待连续稳定取样" : "，保持观察")); return; }
                     if (!automatic.Checked) { SetStatus("后台仅观察：已确认三角形，可勾选允许自动点击进行测试"); return; }
-                    using (WindowFrame fresh = await sampler.ReadAsync(connected.Window))
+                    using (WindowFrame fresh = await ReadBackground(connected, revision))
                     {
                         if (!Current(connected, revision) || !automatic.Checked) return;
                         Rectangle freshCrop;
@@ -387,7 +472,7 @@ namespace CodexAutoResume
                         { BackgroundWait("后台点击前图标变化，已取消本次点击"); return; }
                         Point center = new Point(freshCrop.Left + again.ButtonBounds.Left + again.ButtonBounds.Width / 2, freshCrop.Top + again.ButtonBounds.Top + again.ButtonBounds.Height / 2);
                         bool sent = BackgroundClick.Send(connected.Window, fresh.Bounds, center, delegate
-                        { string why; return Current(connected, revision) && automatic.Checked && connected.ValidateIdentity(out why) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
+                        { string why; return Current(connected, revision) && automatic.Checked && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
                         if (sent) { gate.MarkAttempt(DateTime.UtcNow); RefreshScores(d); SetStatus("后台操作已投递：" + BackgroundClick.LastRoute + "；等待方块确认，尚不计为成功"); }
                         else BackgroundWait("后台点击前窗口状态变化，已取消本次点击");
                     }
@@ -408,7 +493,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "CodexAutoResume " + Portable.Version + " · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和说明均已内置，无需安装开发工具。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n启动后自动寻找 Codex 并观察；勾选允许自动点击即可生效。\n后台模式同样无需快捷键；多个窗口或区域须人工确认。\n“选择窗口”可重新连接；移动窗口后自动重新定位。\n备用：" + shortcut + "+F8 连接前台窗口；F7 鼠标手动标定；\nF9 开始/暂停；F10 停止。快捷键可选。\n\n后台模式（实验）允许完全遮挡，目标须保持未最小化。\n使用持续系统捕获会话，减少反复启动造成的黄色边框闪烁；\n系统仍可能保留黄色指示边框，不保证无边框。\n不主动激活目标或移动鼠标；兼容性取决于目标版本和权限。\n临时捕获失败、拖动、未知或未确认方块均持续等待。\n四次稳定三角形取样后点击，点击前复查，至少间隔5秒。\n收到严格方块才计为确认；超时后持续观察并限速重试。\n方块、发送、语音、问答面板不会被点击。\n\n等待用户回答：识别问答状态，约每2秒检查一次；\n兼容跳过和提交两种面板，不选择、不跳过、不提交。\n面板消失自动恢复检测；依赖本机 Windows OCR 语言。\n缺少语言时仅影响问答识别，仍持续图标监测且不猜测点击。\n扫描图和问答文字仅在内存处理，不保存对话。\n\n日志及主动保存的按钮局部图：\n" + logDirectory + "\nF2 本机自检；F3 MIT 许可；F4 完全遮挡后台自测。\n自测会暂停监控，请暂勿操作鼠标；完成后点开始观察。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "CodexAutoResume " + Portable.Version + " · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和说明均已内置，无需安装开发工具。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n启动后自动寻找 Codex 并观察；勾选允许自动点击即可生效。\n后台模式同样无需快捷键；多个窗口须人工选择。\n多个按钮候选时持续扫描；恢复单候选后自动继续。\n主动点选择区域可人工确认，取消也不清除连接。\n“选择窗口”可重新连接；移动窗口后自动重新定位。\n备用：" + shortcut + "+F8 连接前台窗口；F7 鼠标手动标定；\nF9 开始/暂停；F10 停止。快捷键可选。\n\n后台模式（实验）允许完全遮挡，目标须保持未最小化。\n使用持续系统捕获会话，减少反复启动造成的黄色边框闪烁；\n系统仍可能保留黄色指示边框，不保证无边框。\n不主动激活目标或移动鼠标；兼容性取决于目标版本和权限。\n临时捕获失败、拖动、未知或未确认方块均持续等待。\n画面5秒未更新则状态待确认，旧图不用于点击，自动尝试恢复。\n四次稳定三角形取样后点击，点击前复查，至少间隔5秒。\n收到严格方块才计为确认；超时后持续观察并限速重试。\n方块、发送、语音、问答面板不会被点击。\n\n等待用户回答：识别问答状态，约每2秒检查一次；\n兼容跳过和提交两种面板，不选择、不跳过、不提交。\n面板消失自动恢复检测；依赖本机 Windows OCR 语言。\n缺少语言时仅影响问答识别，仍持续图标监测且不猜测点击。\n扫描图和问答文字仅在内存处理，不保存对话。\n\n图标不变时可每1/5分钟显示心跳，无弹窗通知。\n详细日志每10秒记录新帧时间、缓存/异常计数等，可点打开日志。\n每个日志保留约2MiB当前文件和一个历史文件。\n日志及主动保存的按钮局部图：\n" + logDirectory + "\nF2 本机自检；F3 MIT 许可；F4 完全遮挡后台自测。\n自测会暂停监控，请暂勿操作鼠标；完成后点开始观察。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {
@@ -457,16 +542,14 @@ namespace CodexAutoResume
         {
             status.Text = text;
             if (text == lastStatus) return; lastStatus = text;
+            AppendVisible(text, "state");
+            journal.Write("diagnostics.log", "state", text, DateTime.UtcNow);
+        }
+        void AppendVisible(string text, string category)
+        {
             string line = DateTime.Now.ToString("HH:mm:ss") + "  " + text + Environment.NewLine;
             if (logBox.TextLength > 24000) logBox.Clear(); logBox.AppendText(line);
-            try
-            {
-                Directory.CreateDirectory(logDirectory);
-                string file = Path.Combine(logDirectory, "events.log");
-                if (File.Exists(file) && new FileInfo(file).Length > 1024 * 1024) File.WriteAllText(file, "");
-                File.AppendAllText(file, line);
-            }
-            catch { /* A read-only launch directory must not prevent monitoring. */ }
+            journal.Write("events.log", category, text, DateTime.UtcNow);
         }
         void SaveDiagnostic()
         {
@@ -484,6 +567,8 @@ namespace CodexAutoResume
             if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             WindowCapture.StopCapture();
             timer.Stop(); timer.Dispose();
+            healthTimer.Stop(); healthTimer.Dispose();
+            journal.Write("diagnostics.log", "shutdown", "monitoring=" + monitoring + "; reads=" + activity.Reads + "; completed=" + activity.Completed, DateTime.UtcNow);
             for (int i = 1; i <= 4; i++) Native.UnregisterHotKey(Handle, i);
             if (preview.Image != null) preview.Image.Dispose(); if (demo != null) demo.Dispose(); base.OnFormClosed(e);
         }

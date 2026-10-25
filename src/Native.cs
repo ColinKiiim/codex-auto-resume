@@ -140,6 +140,9 @@ namespace CodexAutoResume
         public bool Demo;
         public bool Automatic;
         readonly RegionSelection selection = new RegionSelection();
+        internal int CandidateCount = -1;
+        internal void RequestRegionChoice() { selection.RequestChoice(); }
+        internal void CancelRegionChoice() { selection.CancelRequest(); }
         static bool Allowed(Process proc, string path, IntPtr h, bool allowDemo, out bool demo)
         {
             demo = allowDemo && proc.Id == Process.GetCurrentProcess().Id && Native.Title(h) == DemoForm.WindowTitle;
@@ -236,6 +239,7 @@ namespace CodexAutoResume
                 {
                     List<LocatedButton> buttons = recognizer.FindButtons(scan);
                     buttons.RemoveAll(delegate(LocatedButton b) { Rectangle region = b.Crop; region.Offset(search.Location); return !Native.Uncovered(Window, region); });
+                    CandidateCount = buttons.Count;
                     Native.RECT after;
                     if (!Native.GetWindowRect(Window, out after) || after.Rectangle != r.Rectangle || Native.GetForegroundWindow() != Window)
                     { reason = "窗口正在变化，等待重新定位"; return false; }
@@ -245,7 +249,7 @@ namespace CodexAutoResume
                     {
                         if (choose == null) { reason = "候选区域需要用户确认"; return false; }
                         index = choose(scan, buttons);
-                        if (index < 0) { reason = "已取消区域选择"; return false; }
+                        if (index < 0) { selection.CancelRequest(); reason = "已取消区域选择"; return false; }
                         selection.Confirm(index, buttons, scan.Size);
                         // The dialog changed focus. Require another fresh scan after user returns.
                         reason = "区域已确认，请切回 Codex 继续监控"; return false;
@@ -282,6 +286,7 @@ namespace CodexAutoResume
             if (!ValidateIdentity(out reason)) return false;
             if ((DateTime.UtcNow - frame.CapturedAt).TotalSeconds > 2 || WindowCapture.Bounds(Window) != frame.Bounds)
             { reason = "捕获帧已过期或窗口已移动，等待新帧"; return false; }
+            if (!frame.ContentFresh(DateTime.UtcNow)) { reason = "画面未更新，当前状态待确认；持续监测并尝试恢复捕获"; return false; }
             if (!Automatic)
             {
                 Native.RECT rect; if (!Native.GetWindowRect(Window, out rect)) return false;
@@ -296,13 +301,14 @@ namespace CodexAutoResume
             using (Bitmap scan = frame.Image.Clone(search, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
             {
                 List<LocatedButton> buttons = recognizer.FindButtons(scan);
+                CandidateCount = buttons.Count;
                 int index = selection.Resolve(buttons, scan.Size);
                 if (index == -2) { reason = "后台捕获正常，正在寻找蓝色圆按钮"; return false; }
                 if (index == -1)
                 {
                     if (choose == null) { reason = "候选区域需要用户确认"; return false; }
                     index = choose(scan, buttons);
-                    if (index < 0) { reason = "已取消区域选择"; return false; }
+                    if (index < 0) { selection.CancelRequest(); reason = "已取消区域选择"; return false; }
                     selection.Confirm(index, buttons, scan.Size);
                     reason = "区域已确认，等待新的后台帧"; return false;
                 }

@@ -8,12 +8,14 @@ namespace CodexAutoResume
     public sealed class RegionSelection
     {
         bool explicitChoice;
+        bool requestedChoice;
         Rectangle selectedBadge;
         Size selectedSearchSize;
         // -1 requires explicit user choice; -2 means no candidates.
         public int Resolve(List<LocatedButton> buttons, Size searchSize)
         {
             if (buttons.Count == 0) return -2;
+            if (requestedChoice) return -1;
             if (!explicitChoice) return buttons.Count == 1 ? 0 : -1;
             if (searchSize != selectedSearchSize) return -1;
             int match = -1;
@@ -29,8 +31,10 @@ namespace CodexAutoResume
         public void Confirm(int index, List<LocatedButton> buttons, Size searchSize)
         {
             if (index < 0 || index >= buttons.Count) throw new ArgumentOutOfRangeException("index");
-            explicitChoice = true; selectedBadge = buttons[index].Badge; selectedSearchSize = searchSize;
+            requestedChoice = false; explicitChoice = true; selectedBadge = buttons[index].Badge; selectedSearchSize = searchSize;
         }
+        public void RequestChoice() { requestedChoice = true; }
+        public void CancelRequest() { requestedChoice = false; }
     }
 
     internal sealed class RegionPicker : Form

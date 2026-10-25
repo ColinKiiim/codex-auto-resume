@@ -21,6 +21,7 @@ namespace CodexAutoResume
         public DateTime ContentAt;
         public long ContentSequence;
         public long Sequence;
+        public bool ContentFresh(DateTime now) { return ContentAt != DateTime.MinValue && (now - ContentAt).TotalSeconds >= -1 && (now - ContentAt).TotalSeconds <= 5; }
         public void Dispose() { if (Image != null) { Image.Dispose(); Image = null; } }
     }
 
@@ -82,6 +83,11 @@ namespace CodexAutoResume
         static int stopQueued;
         internal static long SessionStarts;
         internal static long PoolRefreshes;
+        static DateTime nextRecovery;
+        static DateTime nextSessionAttempt;
+        static IntPtr delayedWindow;
+        static int consecutiveTimeouts;
+        internal static long WatchdogRecoveries;
 
         static void CloseStream()
         {
@@ -126,6 +132,8 @@ namespace CodexAutoResume
 
         static void EnsureStream(IntPtr window, Size size)
         {
+            if (delayedWindow != window) consecutiveTimeouts = 0;
+            if (activeSession == null && delayedWindow == window && DateTime.UtcNow < nextSessionAttempt) throw new InvalidOperationException("等待捕获重连间隔，监测继续");
             if (activeWindow == window && activeSession != null && !streamClosed)
             {
                 if (activeSize != size)
@@ -200,7 +208,7 @@ namespace CodexAutoResume
                     if (old != null) old.Dispose();
                     throw;
                 }
-                catch (TimeoutException) { CloseStream(); throw; }
+                catch (TimeoutException) { CloseStream(); delayedWindow = window; consecutiveTimeouts++; nextSessionAttempt = DateTime.UtcNow.AddSeconds(Math.Min(10, Math.Max(0, (consecutiveTimeouts - 1) * 2))); throw; }
             }
         }
 
@@ -230,6 +238,7 @@ namespace CodexAutoResume
                             try { bitmap = Read(surface, sharedDevice.Device, sharedDevice.Context, frame.ContentSize.Width, frame.ContentSize.Height); }
                             finally { if (surface != null && Marshal.IsComObject(surface)) Marshal.ReleaseComObject(surface); }
                             if (latestImage != null) latestImage.Dispose(); latestImage = bitmap;
+                            consecutiveTimeouts = 0;
                             double ageTicks = Stopwatch.GetTimestamp() * (10000000.0 / Stopwatch.Frequency) - frame.SystemRelativeTime.Ticks;
                             latestContentAt = DateTime.UtcNow.AddTicks(-(long)Math.Max(0, ageTicks)); Interlocked.Increment(ref contentSequence);
                         }
@@ -238,6 +247,15 @@ namespace CodexAutoResume
                     if (latestImage != null)
                     {
                         if (before != Bounds(window) || !Native.IsWindow(window) || Native.IsIconic(window) || streamClosed) throw new InvalidOperationException("窗口状态变化，等待重新定位");
+                        if ((DateTime.UtcNow - latestContentAt).TotalSeconds >= 15 && DateTime.UtcNow >= nextRecovery)
+                        {
+                            nextRecovery = DateTime.UtcNow.AddSeconds(30);
+                            CloseCom(pendingFrame); pendingFrame = null;
+                            latestImage.Dispose(); latestImage = null;
+                            activePool.Recreate(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, new Windows.Graphics.SizeInt32 { Width = before.Width, Height = before.Height });
+                            Interlocked.Increment(ref PoolRefreshes); Interlocked.Increment(ref WatchdogRecoveries);
+                            continue;
+                        }
                         // CapturedAt is the live sample time. ContentAt retains the
                         // actual pixel timestamp; unchanged pixels are never relabelled.
                         return new WindowFrame { Image = new Bitmap(latestImage), Bounds = before, CapturedAt = DateTime.UtcNow,

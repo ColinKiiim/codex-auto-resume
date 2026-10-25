@@ -96,6 +96,7 @@ namespace CodexAutoResume
                 Check(r.Classify(b).State == ButtonState.Unknown, "reject " + shape + ": " + r.Classify(b));
             }
             GateTests();
+            MonitoringTests();
             SamplerTests();
             LocatorTests(r, root);
             IdentityTests();
@@ -137,6 +138,10 @@ namespace CodexAutoResume
                 var multiple = r.FindButtons(area); Check(multiple.Count == 2, "two candidates both retained");
                 RegionSelection selection = new RegionSelection();
                 Check(selection.Resolve(multiple, area.Size) == -1, "multiple requires confirmation");
+                var transientSingle = new System.Collections.Generic.List<LocatedButton> { multiple[0] };
+                Check(selection.Resolve(transientSingle, area.Size) == 0, "transient ambiguity resumes automatically when only one candidate remains");
+                selection.RequestChoice(); Check(selection.Resolve(transientSingle, area.Size) == -1, "manual selection can request confirmation even for one candidate");
+                selection.CancelRequest(); Check(selection.Resolve(transientSingle, area.Size) == 0, "manual cancellation does not latch automatic selection off");
                 selection.Confirm(1, multiple, area.Size);
                 Check(selection.Resolve(multiple, area.Size) == 1, "confirmed second candidate retained");
                 multiple.Reverse(); Check(selection.Resolve(multiple, area.Size) == 0, "selection follows location, not list order");
@@ -198,6 +203,48 @@ namespace CodexAutoResume
                 release.Set();
                 Check(System.Threading.SpinWait.SpinUntil(delegate { return !delayedFailure.IsBusy; }, 1000), "late fault observed and quarantine cleared");
             }
+        }
+        static void MonitoringTests()
+        {
+            DateTime now = new DateTime(2026, 10, 25, 1, 0, 0, DateTimeKind.Utc);
+            using (WindowFrame frame = new WindowFrame { CapturedAt = now, ContentAt = now.AddHours(-10), ContentSequence = 1, Sequence = 1 })
+            {
+                Check(!frame.ContentFresh(now), "fresh read timestamp cannot make ten-hour cached pixels fresh");
+                frame.ContentAt = now.AddSeconds(-4); Check(frame.ContentFresh(now), "recent native content usable");
+                Check(!frame.ContentFresh(now.AddSeconds(2)), "cached native content expires despite active read loop");
+                frame.ContentAt = DateTime.MinValue; Check(!frame.ContentFresh(now), "missing pixel timestamp rejected");
+                frame.ContentAt = now.AddSeconds(5); Check(!frame.ContentFresh(now), "implausible future content timestamp rejected");
+                frame.ContentAt = now;
+                MonitorActivity activity = new MonitorActivity(); activity.Start(now); activity.Background(frame); activity.Recognized(ButtonState.Running);
+                frame.CapturedAt = now.AddSeconds(20); frame.Sequence++;
+                activity.Start(frame.CapturedAt); activity.Background(frame);
+                Check(activity.NewContent == 1 && activity.Cached == 1 && activity.Completed == 2, "telemetry separates repeated cache reads from new content reads");
+                Check(activity.LastContent == now && activity.LastSample == now.AddSeconds(20), "cache read never refreshes native-content time");
+                Check(activity.Summary(now.AddSeconds(20), true, true, true, 2, 0, 0).Contains("20秒") && activity.LastIcon.Contains("方块"), "heartbeat exposes pixel age and last observed icon");
+                activity.ResetSource(); Check(activity.LastContent == DateTime.MinValue && activity.LastSample == DateTime.MinValue, "new target resets prior target timestamps");
+            }
+            MonitorPulse pulse = new MonitorPulse(now);
+            Check(!pulse.Due(now.AddSeconds(59), TimeSpan.FromMinutes(1)), "no early one-minute heartbeat");
+            Check(pulse.Due(now.AddMinutes(1), TimeSpan.FromMinutes(1)), "one-minute heartbeat arrives without icon change");
+            Check(!pulse.Due(now.AddMinutes(1), TimeSpan.FromMinutes(1)), "heartbeat does not repeat every timer tick");
+            pulse.Reset(now);
+            Check(!pulse.Due(now.AddMinutes(4), TimeSpan.FromMinutes(5)) && pulse.Due(now.AddMinutes(5), TimeSpan.FromMinutes(5)), "five-minute reminder interval respected");
+            Check(!pulse.Due(now.AddMinutes(-1), TimeSpan.FromMinutes(5)), "clock moving backwards does not flood log");
+            string folder = Path.Combine(Path.GetTempPath(), "CodexAutoResume-log-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            MonitorLog log = new MonitorLog(folder, 128);
+            log.Write("events.log", "state", new string('x', 200), now);
+            log.Write("events.log", "heartbeat", "same icon, loop alive\r\nsecond line", now.AddMinutes(1));
+            Check(File.Exists(Path.Combine(folder, "events.log.1")), "bounded log rotates previous file");
+            string contents = File.ReadAllText(Path.Combine(folder, "events.log"));
+            Check(contents.Contains("[heartbeat]") && contents.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries).Length == 1, "heartbeat has category and remains one record per line");
+            log.Write("events.log", "detail", new string('y', 200), now);
+            log.Write("events.log", "detail", "rotated again", now);
+            Check(Directory.GetFiles(folder).Length == 2, "rotation retains only current and one previous file");
+            string blocked = Path.Combine(folder, "blocked"); File.WriteAllText(blocked, "not a directory");
+            MonitorLog failing = new MonitorLog(blocked); failing.Write("events.log", "state", "alive", now);
+            Check(failing.WriteFailed, "log write failure is reported without stopping monitoring");
+            foreach (string path in Directory.GetFiles(folder)) File.Delete(path); Directory.Delete(folder);
         }
         static void GateTests()
         {
