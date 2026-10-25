@@ -2,13 +2,13 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $packageDirectory = Join-Path $projectRoot 'packages'
 New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
-$archivePath = Join-Path $packageDirectory 'CodexAutoResume-1.2.2-source.zip'
+$archivePath = Join-Path $packageDirectory 'CodexAutoResume-1.3.0-source.zip'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $filePaths = @()
 foreach ($fileName in @('LICENSE', 'NOTICE', 'README.md', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
 foreach ($folder in @('src', 'assets', 'tools', 'docs', 'tests')) {
     foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -File)) {
-        $include = $folder -ne 'tests' -or $file.Extension -in @('.cs', '.ps1')
+        $include = ($folder -ne 'tests' -or $file.Extension -in @('.cs', '.ps1')) -and $file.Name -ne 'background-progress.md'
         if ($include) { $filePaths += $file.FullName }
     }
 }
@@ -26,7 +26,7 @@ try {
         if (-not $verify.GetEntry('CodexAutoResume/' + $required)) { throw ('Source package missing: ' + $required) }
     }
     foreach ($entry in $verify.Entries) {
-        if ($entry.FullName -match '/(logs|dist|release|packages)/|last-result|migration-result|portable-result|gui-migration-case') { throw ('Generated or private output in source package: ' + $entry.FullName) }
+        if ($entry.FullName -match '/(logs|dist|release|packages)/|last-result|migration-result|portable-result|gui-migration-case|background-progress\.md') { throw ('Generated or private output in source package: ' + $entry.FullName) }
     }
     Write-Output ('Source package verified: ' + $verify.Entries.Count + ' entries')
 } finally { $verify.Dispose() }

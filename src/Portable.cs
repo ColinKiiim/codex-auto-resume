@@ -6,8 +6,8 @@ using System.Reflection;
 [assembly: AssemblyTitle("CodexAutoResume")]
 [assembly: AssemblyDescription("Portable Codex resume button monitor")]
 [assembly: AssemblyProduct("CodexAutoResume")]
-[assembly: AssemblyVersion("1.2.2.0")]
-[assembly: AssemblyFileVersion("1.2.2.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 CodexAutoResume contributors. MIT License.")]
 
 namespace CodexAutoResume
@@ -41,7 +41,8 @@ namespace CodexAutoResume
                 Recognizer recognizer = new Recognizer();
                 string[] names = { "resume", "running", "send", "send-current", "voice" };
                 ButtonState[] expected = { ButtonState.Resume, ButtonState.Running, ButtonState.Send, ButtonState.Send, ButtonState.Voice };
-                string report = "CodexAutoResume 1.2.2 portable self-check" + Environment.NewLine;
+                string report = "CodexAutoResume 1.3.0 portable self-check" + Environment.NewLine;
+                report += "Windows Graphics Capture available: " + WindowCapture.Supported + Environment.NewLine;
                 if (DesktopIdentity.CurrentId() != DesktopIdentity.AppId) throw new InvalidOperationException("Taskbar identity was not set.");
                 report += "PASS: independent taskbar AppUserModelID = " + DesktopIdentity.CurrentId() + Environment.NewLine;
                 using (Icon icon = DesktopIdentity.LoadIcon()) if (icon.Width < 16) throw new InvalidOperationException("Embedded icon invalid.");
@@ -61,7 +62,7 @@ namespace CodexAutoResume
                 }
                 foreach (AssemblyName reference in assembly.GetReferencedAssemblies())
                 {
-                    if (reference.Name != "mscorlib" && reference.Name != "System" && !reference.Name.StartsWith("System.", StringComparison.Ordinal))
+                    if (reference.Name != "mscorlib" && reference.Name != "System" && !reference.Name.StartsWith("System.", StringComparison.Ordinal) && reference.Name != "Windows.Graphics" && reference.Name != "Windows.Foundation" && reference.Name != "WindowsBase" && reference.Name != "UIAutomationClient" && reference.Name != "UIAutomationTypes")
                         throw new InvalidOperationException("Unexpected external assembly: " + reference.Name);
                     report += "Framework: " + reference.Name + Environment.NewLine;
                 }

@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 
 namespace CodexAutoResume
 {
@@ -32,6 +33,7 @@ namespace CodexAutoResume
         Target target;
         readonly Timer timer = new Timer();
         readonly CheckBox automatic = new CheckBox { Text = "允许自动点击（默认仅观察）", AutoSize = true };
+        readonly CheckBox background = new CheckBox { Text = "后台模式（实验）：允许完全遮挡，保持窗口未最小化", AutoSize = true };
         readonly NumericUpDown cropSize = new NumericUpDown { Minimum = 36, Maximum = 160, Value = 64, Increment = 4, Width = 70 };
         readonly PictureBox preview = new PictureBox { Width = 128, Height = 128, BackColor = Color.FromArgb(35, 35, 35), SizeMode = PictureBoxSizeMode.Zoom };
         readonly Label status = new Label { AutoSize = false, Height = 54, Dock = DockStyle.Fill, Text = "切到 Codex，按自动定位快捷键即可开始。" };
@@ -42,22 +44,23 @@ namespace CodexAutoResume
         readonly string logDirectory = Path.Combine(Portable.DataDirectory, "logs");
         DemoForm demo;
         bool monitoring, updating;
+        int generation;
         string lastStatus = "";
         string shortcut = "Ctrl+Alt";
         Rectangle lastBadge;
 
         public MainForm()
         {
-            Text = "CodexAutoResume 1.2.2 · 自动定位 · 单文件便携版";
+            Text = "CodexAutoResume 1.3.0 · 后台模式（实验） · 单文件便携版";
             ShowInTaskbar = true; ShowIcon = true; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10);
-            ClientSize = new Size(760, 640); MinimumSize = new Size(720, 640);
+            ClientSize = new Size(760, 680); MinimumSize = new Size(720, 680);
             StartPosition = FormStartPosition.CenterScreen;
             TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 7 };
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -76,6 +79,7 @@ namespace CodexAutoResume
             layout.Controls.Add(controls, 0, 2);
             FlowLayoutPanel options = new FlowLayoutPanel { Dock = DockStyle.Fill };
             options.Controls.Add(automatic); options.Controls.Add(new Label { Text = "手动取样(px)", AutoSize = true, Padding = new Padding(12, 4, 0, 0) }); options.Controls.Add(cropSize);
+            options.SetFlowBreak(cropSize, true); options.Controls.Add(background);
             layout.Controls.Add(options, 0, 3);
             FlowLayoutPanel images = new FlowLayoutPanel { Dock = DockStyle.Fill };
             images.Controls.Add(preview); images.Controls.Add(scores); layout.Controls.Add(images, 0, 4);
@@ -88,7 +92,8 @@ namespace CodexAutoResume
             check.Click += delegate { ShowSelfCheck(); };
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } };
-            automatic.CheckedChanged += delegate { gate.BreakStreak(); SetStatus(automatic.Checked ? "自动点击已允许；切回已标定窗口后生效" : "仅观察模式：不会点击"); };
+            automatic.CheckedChanged += delegate { generation++; gate.BreakStreak(); SetStatus(automatic.Checked ? "自动点击已允许；后台模式可在被遮挡时尝试恢复" : "仅观察模式：不会点击"); };
+            background.CheckedChanged += delegate { target = null; Stop(background.Checked ? "后台模式已开启（实验）；先将 Codex 置于前台按 F8 组合键连接，再切到其他窗口" : "已切回前台模式，请按 F8 组合键重新连接"); };
             cropSize.ValueChanged += delegate { if (target != null && !target.Automatic) { target = null; Stop("手动取样尺寸已改变，请重新标定"); } };
             timer.Interval = 400; timer.Tick += delegate { TickMonitor(); }; timer.Start();
             Shown += delegate
@@ -105,7 +110,7 @@ namespace CodexAutoResume
                     if (a && b && c && d) { shortcut = names[i]; registered = true; break; }
                     for (int j = 1; j <= 4; j++) Native.UnregisterHotKey(Handle, j);
                 }
-                instructions.Text = "1. 切到 Codex，按 " + shortcut + "+F8 自动定位并观察，无需移动鼠标。\n2. 勾选下方“允许自动点击”，切回 Codex 即可自动恢复；多候选须手动选择。\n3. 自动模式跟随窗口位置和大小变化；" + shortcut + "+F9 开始/停止。\n备用：鼠标指向按钮后按 " + shortcut + "+F7 手动标定。紧急停止：" + shortcut + "+F10。";
+                instructions.Text = "1. 选择前台 / 后台模式；切到 Codex，按 " + shortcut + "+F8 连接并观察。\n2. 核对识别后勾选“允许自动点击”；后台模式允许切到其他应用，完全遮挡也可尝试。\n3. 多候选须选择确认；自动定位跟随窗口移动。" + shortcut + "+F9 开始/停止。\n备用：鼠标指向按钮后按 " + shortcut + "+F7 标定。紧急停止：" + shortcut + "+F10。";
                 if (!registered) { toggle.Enabled = false; SetStatus("三组快捷键都被占用，请关闭冲突程序后重新打开本工具。"); }
                 else SetStatus("就绪：" + shortcut + "+F8 自动定位；F7 手动标定；F9 开始/停止；F10 停止");
             };
@@ -168,11 +173,12 @@ namespace CodexAutoResume
         }
         void Stop(string message)
         {
-            monitoring = false; gate.BreakStreak(); toggle.Text = "开始观察"; SetStatus(message);
+            generation++; monitoring = false; gate.BreakStreak(); toggle.Text = "开始观察"; SetStatus(message);
         }
         void TickMonitor()
         {
             if (!monitoring || updating || target == null) return;
+            if (background.Checked) { TickBackground(); return; }
             updating = true;
             try
             {
@@ -219,15 +225,78 @@ namespace CodexAutoResume
             catch (Exception e) { Stop("监控已停止：" + e.Message); }
             finally { updating = false; }
         }
+
+        bool Current(Target connected, int revision)
+        { return !IsDisposed && monitoring && background.Checked && target == connected && generation == revision; }
+
+        void BackgroundWait(string reason)
+        {
+            gate.BreakStreak(); gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
+            if (reason == "已取消区域选择") Stop("已取消区域选择，监控已停止");
+            else if (gate.Failed) Stop("后台点击后 8 秒未确认方块；此窗口可能不接受后台点击，请检查后重新连接");
+            else SetStatus(reason);
+        }
+
+        async void TickBackground()
+        {
+            updating = true;
+            Target connected = target; int revision = generation;
+            try
+            {
+                string reason;
+                if (!connected.ValidateIdentity(out reason)) { BackgroundWait(reason); return; }
+                WindowFrame captured;
+                try { captured = await Task.Run(delegate { return WindowCapture.Snapshot(connected.Window); }); }
+                catch (Exception e) { if (Current(connected, revision)) BackgroundWait(e.Message); return; }
+                using (WindowFrame frame = captured)
+                {
+                    if (!Current(connected, revision)) return;
+                    Rectangle crop;
+                    if (!connected.LocateBackground(frame, recognizer, ChooseRegion, out crop, out reason)) { if (Current(connected, revision)) BackgroundWait(reason); return; }
+                    Rectangle local = crop; local.Offset(-frame.Bounds.X, -frame.Bounds.Y);
+                    Detection d;
+                    using (Bitmap b = frame.Image.Clone(local, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
+                    { d = recognizer.Classify(b); UpdatePreview(b, d); }
+                    Rectangle badge = d.ButtonBounds; badge.Offset(crop.Location);
+                    if (!lastBadge.IsEmpty && (Math.Abs(badge.X - lastBadge.X) > 2 || Math.Abs(badge.Y - lastBadge.Y) > 2)) gate.BreakStreak();
+                    lastBadge = badge;
+                    bool ready = gate.Observe(d.State, DateTime.UtcNow);
+                    if (gate.Failed) { Stop("后台点击未确认方块；已停止，不会重复点击"); return; }
+                    if (gate.AwaitingRunning) { SetStatus("后台操作已投递一次，等待新捕获帧中的白色方块…"); return; }
+                    if (!ready)
+                    { SetStatus("后台捕获：" + Portable.StateName(d.State) + (d.State == ButtonState.Resume ? "，等待连续稳定新帧" : "，保持观察")); return; }
+                    if (!automatic.Checked) { SetStatus("后台仅观察：已确认三角形，可勾选允许自动点击进行测试"); return; }
+                    using (WindowFrame fresh = await Task.Run(delegate { return WindowCapture.Snapshot(connected.Window); }))
+                    {
+                        if (!Current(connected, revision) || !automatic.Checked) return;
+                        Rectangle freshCrop;
+                        if (fresh.Sequence <= frame.Sequence || !connected.LocateBackground(fresh, recognizer, null, out freshCrop, out reason) || freshCrop != crop)
+                        { BackgroundWait("后台点击前位置变化，等待重新定位"); return; }
+                        Rectangle freshLocal = freshCrop; freshLocal.Offset(-fresh.Bounds.X, -fresh.Bounds.Y);
+                        Detection again;
+                        using (Bitmap b = fresh.Image.Clone(freshLocal, System.Drawing.Imaging.PixelFormat.Format32bppRgb)) again = recognizer.Classify(b);
+                        if (again.State != ButtonState.Resume || Math.Abs(again.ButtonBounds.X - d.ButtonBounds.X) > 2 || Math.Abs(again.ButtonBounds.Y - d.ButtonBounds.Y) > 2)
+                        { BackgroundWait("后台点击前图标变化，已取消本次点击"); return; }
+                        Point center = new Point(freshCrop.Left + again.ButtonBounds.Left + again.ButtonBounds.Width / 2, freshCrop.Top + again.ButtonBounds.Top + again.ButtonBounds.Height / 2);
+                        bool sent = BackgroundClick.Send(connected.Window, fresh.Bounds, center, delegate
+                        { string why; return Current(connected, revision) && automatic.Checked && connected.ValidateIdentity(out why) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
+                        if (sent) { gate.MarkAttempt(DateTime.UtcNow); SetStatus("后台操作已投递：" + BackgroundClick.LastRoute + "；等待方块确认，尚不计为成功"); }
+                        else BackgroundWait("后台点击前窗口状态变化，已取消本次点击");
+                    }
+                }
+            }
+            catch (Exception e) { if (Current(connected, revision)) Stop("后台监控已停止：" + e.Message); }
+            finally { updating = false; }
+        }
         void UpdatePreview(Bitmap b, Detection d)
         {
             Image previous = preview.Image; preview.Image = new Bitmap(b); if (previous != null) previous.Dispose();
             scores.Text = String.Format("{0} · {1}\n三角形 {2:P0}   方块 {3:P0}   发送 {4:P0}   语音 {5:P0}\n已点击：{6}    已确认恢复：{7}\n{8}",
-                target != null && target.Automatic ? "自动定位" : "手动标定", Portable.StateName(d.State), d.ResumeScore, d.RunningScore, d.SendScore, d.VoiceScore, gate.Attempts, gate.Verified, d.Detail);
+                (background.Checked ? "后台 · " : "前台 · ") + (target != null && target.Automatic ? "自动定位" : "手动标定"), Portable.StateName(d.State), d.ResumeScore, d.RunningScore, d.SendScore, d.VoiceScore, gate.Attempts, gate.Verified, d.Detail);
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "CodexAutoResume 1.2.2 · 单文件便携版\n\n复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本和本说明均内置，不需要复制图片、源码或配置文件。\n依赖 Windows 自带的 .NET Framework 4.x，不需要安装 Python。\n\n切到 Codex，按 " + shortcut + "+F8 自动定位并开始观察。\n多个候选区域会弹窗，必须选择并点击确认后才继续。\n自动模式每次重新定位，窗口位置和大小可以变化。\n备用手动标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察模式核对结果，再勾选允许自动点击。\n\n向右三角形：自动恢复一次；方块：运行中，不点击；\n向上箭头：发送模式，不点击；声波：语音模式，不点击。\n未知图形不点击。Codex 必须在前台可见。\n每次重启工具后需要按快捷键连接前台 Codex。\n\n日志和主动保存的诊断图位于：\n" + logDirectory + "\n\nMIT 开源许可：在主窗口按 F3 查看。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "CodexAutoResume 1.3.0 · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和本说明均已内置。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n先选前台 / 后台模式，再切到 Codex 按 " + shortcut + "+F8 连接。\n多个候选必须手动选择确认。窗口位置和大小可以变化。\n备用标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察核对识别，再勾选允许自动点击。\n\n后台模式（实验）：可切到其他应用，允许窗口完全被盖住。\n使用系统窗口捕获，可能显示系统黄色捕获边框。\n不主动激活目标或移动鼠标；应用是否接受后台消息取决于版本。\n已验证演示和 Chromium 测试页后台点击、真实 Codex 遮挡捕获；\n真实 Codex 的暂停到恢复尚需实际暂停场景验证。\n最小化时暂停；黑屏、无新帧或未知图形均不点击。\n8 秒未确认运行方块则停止，不会循环重试。\n前台模式仍要求按钮可见且目标在前台。\n\n三角形可恢复；方块运行中；向上箭头发送；声波语音。\n每次重启后需要按快捷键连接 Codex。日志及主动保存局部图：\n" + logDirectory + "\nF2 本机自检；F3 查看 MIT 许可。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {
@@ -244,7 +313,9 @@ namespace CodexAutoResume
         {
             using (Form dialog = new Form { Text = "CodexAutoResume · MIT License", ClientSize = new Size(780, 460), StartPosition = FormStartPosition.CenterParent, Icon = DesktopIdentity.LoadIcon(), ShowInTaskbar = false })
             {
-                dialog.Controls.Add(new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = DesktopIdentity.LicenseText(), Font = new Font("Consolas", 10) });
+                TextBox document = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = DesktopIdentity.LicenseText().Replace("\r\n", "\n").Replace("\n", Environment.NewLine), Font = new Font("Consolas", 10) };
+                dialog.Controls.Add(document);
+                dialog.Shown += delegate { document.Focus(); document.Select(0, 0); };
                 dialog.ShowDialog(this);
             }
         }
@@ -319,13 +390,13 @@ namespace CodexAutoResume
         }
     }
 
-    internal sealed class IconButton : Control
+    internal sealed class IconButton : Button
     {
         public string State = "三角形";
-        public IconButton() { SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true); Cursor = Cursors.Hand; }
+        public IconButton() { SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true); Cursor = Cursors.Hand; FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Color.FromArgb(24, 24, 24); AccessibleName = "Resume demo"; }
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e); Draw(e.Graphics, ClientRectangle, State);
+            e.Graphics.Clear(BackColor); Draw(e.Graphics, ClientRectangle, State);
         }
         public static void Draw(Graphics g, Rectangle r, string state)
         {

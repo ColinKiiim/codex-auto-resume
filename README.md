@@ -1,8 +1,20 @@
-# CodexAutoResume 1.2.2
+# CodexAutoResume 1.3.0
 
-MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标和分组，不与启动它的 ChatGPT/Codex 窗口共用任务栏身份。可发布源码包由 `tools/package-source.ps1` 生成，位于 `packages/CodexAutoResume-1.2.2-source.zip`。
+MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标和分组，不与启动它的 ChatGPT/Codex 窗口共用任务栏身份。源码包位于 `packages/CodexAutoResume-1.3.0-source.zip`。
 
 识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。支持自动定位、多区域人工选择、备用手动标定，以及单文件便携使用。
+
+## 后台模式（1.3.0 实验功能）
+
+勾选“后台模式”后，先将 Codex 放到前台并按主窗口显示的 F8 组合键连接。观察识别正确后勾选“允许自动点击”，随后可以切到其他应用，把 Codex 完全盖住；保持 Codex 未最小化。切换前台/后台模式会清除连接，需要重新按 F8。
+
+后台模式使用 Windows Graphics Capture 直接获取目标窗口的新帧，再向目标子窗口投递点击消息，不主动激活目标或移动鼠标。系统可能显示黄色捕获边框。需要 Windows 10 1903+ / Windows 11 x64，使用 Windows 自带接口，无新增第三方运行库；迁移仍只复制一个 EXE。
+
+已验证：完全遮挡的演示按钮及独立 Chromium HTML 按钮均收到点击并由三角形变为方块，鼠标和前台窗口不变；真实 Codex 在完全遮挡时连续捕获到运行方块。**真实 Codex 的暂停→恢复尚未获得实际暂停场景验证，因此仍为实验功能**。应用是否接受后台消息取决于其版本与权限等级。
+
+最小化、隐藏、旧帧、黑屏、未知图形、窗口/进程变化时不点击；后台操作投递后仍需连续新方块帧确认，8 秒未确认会停止，不会反复发送。自动定位、多候选人工确认和 F7 手动备用在后台模式仍保留。后台监控只处理快捷键连接的那个窗口。
+
+实现、验证和限制见 [后台模式验证记录](docs/background-mode.md)。
 
 ## 单文件迁移
 
@@ -58,10 +70,10 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 - 点击前再次扫描，核对窗口、遮挡、候选选择和当前图形，变化时取消点击。
 - 每次暂停只尝试一次；连续 3 帧方块确认恢复后才允许下一轮，并有 5 秒冷却。
 - 点击后 8 秒未确认方块会停止，需要检查后重新连接或标定。
-- 只处理快捷键连接时的 Codex 窗口和进程。切到其他应用、最小化、关闭窗口或被遮挡时不点击。
+- 只处理快捷键连接时的 Codex 窗口和进程。前台模式切到其他应用或被遮挡时不点击；后台模式允许完全遮挡。两种模式均不处理最小化或关闭的窗口。
 - 扫描图只在内存中处理，不自动保存对话或整屏截图。“保存局部诊断图”仅保存上一帧按钮区域。
 
-当前支持样本中的蓝色圆按钮和白色图标。Codex 需要前台可见；后台聊天不会被遍历。自动模式找不到按钮时持续等待，可使用 F7 手动备用。换主题或应用更新导致图标变化后可能识别为未知。
+当前支持样本中的蓝色圆按钮和白色图标。前台模式需要按钮可见；后台模式获取已连接窗口的画面，不遍历其他聊天。找不到按钮时持续等待，可使用 F7 手动备用。换主题或应用更新导致图标变化后可能识别为未知。
 
 ## 开发与验证
 
@@ -71,6 +83,8 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 
 - `src/Recognition.cs`：四状态图像识别、自动区域搜索、单次恢复状态机。
 - `src/Native.cs`：窗口校验、自动/手动定位、截图与输入。
+- `src/WindowCapture.cs`：WinRT/D3D11 后台窗口捕获与新帧校验。
+- `src/BackgroundClick.cs`：子窗口坐标换算和后台消息输入。
 - `src/Selection.cs`：多区域确认、所选区域跟踪。
 - `src/App.cs`：中文界面、内置说明与交互演示。
 - `src/Portable.cs`：内嵌资源自检、版本与用户数据目录。
@@ -78,6 +92,9 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 - `tools/build-icon.ps1`：生成各分辨率图标；`tools/package-source.ps1`：打包开源源码。
 - `tests/Tests.cs`：真实图片、缩放位移、负样本、定位和状态机测试。
 - `tests/portable-smoke.ps1`：将一个 EXE 单独复制到新临时目录并自检。
+- `build.ps1 -BackgroundTests`：完全遮挡的演示按钮端到端测试。
+- `build.ps1 -ChromiumTests`：使用本机 Chrome 和隔离临时配置测试 HTML 按钮；只用于开发，不是程序运行依赖。
+- `build.ps1 -TargetProbe`：真实 Codex 完全遮挡时的只读捕获探测，不点击目标。
 - `docs/validation.md`：实际验证结果及未覆盖范围。
 
 调研依据：本机 Codex 未通过辅助功能接口暴露目标按钮，因此采用图像方案。[Windows UI Automation](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-controlpatternsoverview)可在应用提供控件时调用按钮；本版使用 [CopyFromScreen](https://learn.microsoft.com/en-us/dotnet/api/system.drawing.graphics.copyfromscreen?view=windowsdesktop-9.0)读取像素、[SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)点击、[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)注册热键。没有修改 Codex 文件或依赖私有协议。

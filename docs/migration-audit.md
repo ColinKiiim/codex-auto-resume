@@ -1,10 +1,10 @@
 # 单文件迁移验收
 
-验收日期：2026-10-24（Asia/Shanghai）。当前交付版本：1.2.2，Windows 10/11 x64；下方的迁移交互记录来自 1.2.1，1.2.2 重新通过全部隔离迁移检查。
+验收日期：2026-10-24（Asia/Shanghai）。当前交付版本：1.3.0，Windows 10/11 x64；后台功能需要 Windows 10 1903+。下方迁移交互记录来自 1.2.1；1.3.0 新增后台捕获后重新通过全部隔离迁移检查。
 
 ## 结论
 
-本地已验证可以只复制 `release/CodexAutoResume.exe` 运行，无需项目、外部图片、配置、Python、Node、API Key 或开发工具。程序依赖 Windows 的系统 .NET Framework、WinForms、Drawing，以及 user32/kernel32 系统接口。没有内置本机用户名、工作目录或 OneDrive 路径。
+本地已验证可以只复制 `release/CodexAutoResume.exe` 运行，无需项目、外部图片、配置、Python、Node、API Key 或开发工具。依赖系统 .NET Framework、WinForms、Drawing、Windows Graphics Capture、D3D11/DXGI，以及 user32/kernel32/combase/dwmapi 系统接口；没有新增分发 DLL。没有内置本机用户名、工作目录或 OneDrive 路径。
 
 这次额外修复了应用识别对安装目录的依赖：保留已知安装布局的识别，并增加 OpenAI 公司/产品元数据匹配，支持其他磁盘与自定义安装路径。它用于应用辨识，不是数字签名验证。
 

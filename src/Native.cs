@@ -34,6 +34,7 @@ namespace CodexAutoResume
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
         [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
         [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder b, int max);
         [DllImport("user32.dll", SetLastError = true)] public static extern bool RegisterHotKey(IntPtr h, int id, uint modifiers, uint key);
@@ -226,6 +227,58 @@ namespace CodexAutoResume
             crop = new Rectangle(r.Left + OffsetX - CropSize / 2, r.Top + OffsetY - CropSize / 2, CropSize, CropSize);
             if (!Native.Uncovered(Window, crop)) { reason = "等待 Codex 在前台且按钮未被遮挡"; return false; }
             return true;
+        }
+
+        internal bool ValidateIdentity(out string reason)
+        {
+            reason = "";
+            if (!Native.IsWindow(Window)) { reason = "原窗口已关闭，请重新连接"; return false; }
+            try
+            {
+                using (Process p = Process.GetProcessById(ProcessId))
+                    if (Native.Pid(Window) != ProcessId || p.StartTime.ToUniversalTime().Ticks != ProcessStart || p.MainModule.FileName != ProcessPath)
+                    { reason = "进程已变化，请重新连接"; return false; }
+            }
+            catch { reason = "无法核实原进程，请重新连接"; return false; }
+            if (Native.IsIconic(Window)) { reason = "Codex 已最小化，后台监控暂停"; return false; }
+            if (!Native.IsWindowVisible(Window)) { reason = "Codex 窗口已隐藏，后台监控暂停"; return false; }
+            return true;
+        }
+
+        internal bool LocateBackground(WindowFrame frame, Recognizer recognizer, Func<Bitmap, List<LocatedButton>, int> choose, out Rectangle crop, out string reason)
+        {
+            crop = Rectangle.Empty;
+            if (!ValidateIdentity(out reason)) return false;
+            if ((DateTime.UtcNow - frame.CapturedAt).TotalSeconds > 2 || WindowCapture.Bounds(Window) != frame.Bounds)
+            { reason = "捕获帧已过期或窗口已移动，等待新帧"; return false; }
+            if (!Automatic)
+            {
+                Native.RECT rect; if (!Native.GetWindowRect(Window, out rect)) return false;
+                if (rect.Right - rect.Left != Width || rect.Bottom - rect.Top != Height || Native.Dpi(Window) != Dpi)
+                { reason = "窗口大小或缩放已变化，请重新标定"; return false; }
+                crop = new Rectangle(rect.Left + OffsetX - CropSize / 2, rect.Top + OffsetY - CropSize / 2, CropSize, CropSize);
+                if (!frame.Bounds.Contains(crop)) { reason = "标定区域超出捕获边界"; return false; }
+                return true;
+            }
+            int top = Math.Max(0, frame.Image.Height - Math.Max(200, (int)(frame.Image.Height * .45)));
+            Rectangle search = new Rectangle(0, top, frame.Image.Width, frame.Image.Height - top);
+            using (Bitmap scan = frame.Image.Clone(search, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
+            {
+                List<LocatedButton> buttons = recognizer.FindButtons(scan);
+                int index = selection.Resolve(buttons, scan.Size);
+                if (index == -2) { reason = "后台捕获正常，正在寻找蓝色圆按钮"; return false; }
+                if (index == -1)
+                {
+                    if (choose == null) { reason = "候选区域需要用户确认"; return false; }
+                    index = choose(scan, buttons);
+                    if (index < 0) { reason = "已取消区域选择"; return false; }
+                    selection.Confirm(index, buttons, scan.Size);
+                    reason = "区域已确认，等待新的后台帧"; return false;
+                }
+                crop = buttons[index].Crop;
+                crop.Offset(frame.Bounds.Left, frame.Bounds.Top + top);
+                return true;
+            }
         }
     }
 }

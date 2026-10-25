@@ -1,0 +1,215 @@
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Diagnostics;
+using Windows.Graphics.Capture;
+using Windows.Graphics.DirectX;
+using Windows.Graphics.DirectX.Direct3D11;
+
+namespace CodexAutoResume
+{
+    // Independent WinRT/D3D11 interop. No third-party binary or injected code.
+    // Each request starts a new capture and accepts only its newly delivered frame.
+    internal sealed class WindowFrame : IDisposable
+    {
+        public Bitmap Image;
+        public Rectangle Bounds;
+        public DateTime CapturedAt;
+        public long Sequence;
+        public void Dispose() { if (Image != null) { Image.Dispose(); Image = null; } }
+    }
+
+    internal static class WindowCapture
+    {
+        [ComImport, Guid("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface ItemInterop
+        {
+            IntPtr CreateForWindow(IntPtr window, ref Guid iid);
+            IntPtr CreateForMonitor(IntPtr monitor, ref Guid iid);
+        }
+        [ComImport, Guid("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface DxgiAccess { IntPtr GetInterface(ref Guid iid); }
+
+        [DllImport("combase.dll", CharSet = CharSet.Unicode)] static extern int WindowsCreateString(string value, int length, out IntPtr hstring);
+        [DllImport("combase.dll")] static extern int WindowsDeleteString(IntPtr hstring);
+        [DllImport("combase.dll")] static extern int RoGetActivationFactory(IntPtr name, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out ItemInterop factory);
+        [DllImport("d3d11.dll")] static extern int D3D11CreateDevice(IntPtr adapter, uint driver, IntPtr software, uint flags, IntPtr levels, uint levelCount, uint sdk, out IntPtr device, out uint level, out IntPtr context);
+        [DllImport("d3d11.dll")] static extern int CreateDirect3D11DeviceFromDXGIDevice(IntPtr device, out IntPtr result);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out Native.RECT rect, int size);
+
+        [StructLayout(LayoutKind.Sequential)] struct TextureDesc
+        {
+            public uint Width, Height, MipLevels, ArraySize, Format, SampleCount, SampleQuality, Usage, BindFlags, CPUAccessFlags, MiscFlags;
+        }
+        [StructLayout(LayoutKind.Sequential)] struct Mapped { public IntPtr Data; public uint RowPitch, DepthPitch; }
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate void GetDesc(IntPtr self, out TextureDesc desc);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int CreateTexture(IntPtr self, ref TextureDesc desc, IntPtr data, out IntPtr texture);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate void CopyResource(IntPtr self, IntPtr target, IntPtr source);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int Map(IntPtr self, IntPtr resource, uint subresource, uint map, uint flags, out Mapped mapped);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate void Unmap(IntPtr self, IntPtr resource, uint subresource);
+
+        static T Method<T>(IntPtr obj, int slot) where T : class
+        { return Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(obj), slot * IntPtr.Size), typeof(T)) as T; }
+        static void Check(int hr) { Marshal.ThrowExceptionForHR(hr); }
+        static void Release(ref IntPtr value) { if (value != IntPtr.Zero) { Marshal.Release(value); value = IntPtr.Zero; } }
+        static void CloseCom(object value)
+        {
+            if (value == null) return;
+            try { IDisposable close = value as IDisposable; if (close != null) close.Dispose(); }
+            finally { if (Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
+        }
+        static long sequence;
+        static readonly object captureLock = new object();
+        static D3dDevice sharedDevice;
+
+        sealed class D3dDevice : IDisposable
+        {
+            public IntPtr Device, Context;
+            public IDirect3DDevice Runtime;
+            public D3dDevice()
+            {
+                IntPtr dxgi = IntPtr.Zero, projected = IntPtr.Zero;
+                try
+                {
+                    uint level;
+                    int hr = D3D11CreateDevice(IntPtr.Zero, 1, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7, out Device, out level, out Context);
+                    if (hr < 0) { Release(ref Device); Release(ref Context); Check(D3D11CreateDevice(IntPtr.Zero, 5, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7, out Device, out level, out Context)); }
+                    Guid dxgiId = new Guid("54EC77FA-1377-44E6-8C32-88FD5F44C84C");
+                    Check(Marshal.QueryInterface(Device, ref dxgiId, out dxgi));
+                    Check(CreateDirect3D11DeviceFromDXGIDevice(dxgi, out projected));
+                    Runtime = (IDirect3DDevice)Marshal.GetObjectForIUnknown(projected);
+                }
+                catch { Dispose(); throw; }
+                finally { Release(ref projected); Release(ref dxgi); }
+            }
+            public void Dispose()
+            { try { CloseCom(Runtime); Runtime = null; } finally { Release(ref Context); Release(ref Device); } }
+        }
+        public static bool Supported { get { try { return GraphicsCaptureSession.IsSupported(); } catch { return false; } } }
+
+        public static Rectangle Bounds(IntPtr window)
+        {
+            Native.RECT rect;
+            if (DwmGetWindowAttribute(window, 9, out rect, Marshal.SizeOf(typeof(Native.RECT))) < 0 && !Native.GetWindowRect(window, out rect))
+                throw new InvalidOperationException("无法读取窗口捕获边界");
+            return rect.Rectangle;
+        }
+
+        public static WindowFrame Snapshot(IntPtr window)
+        {
+            // Device/context operations are serialized, including when Task.Run changes threads.
+            lock (captureLock)
+            {
+                try { return SnapshotCore(window); }
+                catch (COMException)
+                {
+                    D3dDevice old = sharedDevice; sharedDevice = null;
+                    if (old != null) old.Dispose();
+                    throw;
+                }
+            }
+        }
+
+        static WindowFrame SnapshotCore(IntPtr window)
+        {
+            if (!Supported) throw new InvalidOperationException("此系统不支持 Windows Graphics Capture（需要 Windows 10 1903+）");
+            if (!Native.IsWindow(window) || Native.IsIconic(window) || !Native.IsWindowVisible(window)) throw new InvalidOperationException("窗口已关闭、隐藏或最小化，后台监控暂停");
+            Rectangle before = Bounds(window);
+            IntPtr name = IntPtr.Zero, itemPtr = IntPtr.Zero;
+            ItemInterop factory = null;
+            GraphicsCaptureItem item = null;
+            Direct3D11CaptureFramePool pool = null;
+            GraphicsCaptureSession session = null;
+            try
+            {
+                string className = "Windows.Graphics.Capture.GraphicsCaptureItem";
+                Check(WindowsCreateString(className, className.Length, out name));
+                Guid factoryId = typeof(ItemInterop).GUID;
+                Check(RoGetActivationFactory(name, ref factoryId, out factory));
+                Guid itemId = new Guid("79C3F95B-31F7-4EC2-A464-632EF5D30760");
+                itemPtr = factory.CreateForWindow(window, ref itemId);
+                item = (GraphicsCaptureItem)Marshal.GetObjectForIUnknown(itemPtr);
+                if (sharedDevice == null) sharedDevice = new D3dDevice();
+                pool = Direct3D11CaptureFramePool.CreateFreeThreaded(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, item.Size);
+                session = pool.CreateCaptureSession(item);
+                long startedTicks = (long)(Stopwatch.GetTimestamp() * (10000000.0 / Stopwatch.Frequency));
+                session.StartCapture();
+                DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+                while (DateTime.UtcNow < deadline)
+                {
+                    Direct3D11CaptureFrame frame = pool.TryGetNextFrame();
+                    try
+                    {
+                        if (frame != null)
+                        {
+                            if (frame.SystemRelativeTime.Ticks < startedTicks) continue;
+                            if (Native.IsIconic(window) || !Native.IsWindow(window) || !Native.IsWindowVisible(window) || before != Bounds(window) ||
+                                frame.ContentSize.Width != before.Width || frame.ContentSize.Height != before.Height)
+                                throw new InvalidOperationException("窗口大小或位置正在变化，等待新捕获帧");
+                            IDirect3DSurface surface = frame.Surface;
+                            Bitmap bitmap;
+                            try { bitmap = Read(surface, sharedDevice.Device, sharedDevice.Context, frame.ContentSize.Width, frame.ContentSize.Height); }
+                            finally { CloseCom(surface); }
+                            double ageTicks = Stopwatch.GetTimestamp() * (10000000.0 / Stopwatch.Frequency) - frame.SystemRelativeTime.Ticks;
+                            return new WindowFrame { Image = bitmap, Bounds = before, CapturedAt = DateTime.UtcNow.AddTicks(-(long)Math.Max(0, ageTicks)), Sequence = Interlocked.Increment(ref sequence) };
+                        }
+                    }
+                    finally { CloseCom(frame); }
+                    Thread.Sleep(15);
+                }
+                throw new TimeoutException("后台捕获未收到新帧；不会使用旧图点击");
+            }
+            finally
+            {
+                try { CloseCom(session); }
+                finally
+                {
+                    try { CloseCom(pool); }
+                    finally
+                    {
+                        if (item != null && Marshal.IsComObject(item)) Marshal.ReleaseComObject(item);
+                        if (factory != null) Marshal.ReleaseComObject(factory);
+                        Release(ref itemPtr);
+                        if (name != IntPtr.Zero) WindowsDeleteString(name);
+                    }
+                }
+            }
+        }
+
+        static Bitmap Read(IDirect3DSurface surface, IntPtr device, IntPtr context, int width, int height)
+        {
+            Guid textureId = new Guid("6F15AAF2-D208-4E89-9AB4-489535D34F9C");
+            IntPtr texture = IntPtr.Zero, staging = IntPtr.Zero;
+            try
+            {
+                texture = ((DxgiAccess)surface).GetInterface(ref textureId);
+                TextureDesc desc; Method<GetDesc>(texture, 10)(texture, out desc);
+                desc.Usage = 3; desc.BindFlags = 0; desc.CPUAccessFlags = 0x20000; desc.MiscFlags = 0;
+                Check(Method<CreateTexture>(device, 5)(device, ref desc, IntPtr.Zero, out staging));
+                Method<CopyResource>(context, 47)(context, staging, texture);
+                Mapped data; Check(Method<Map>(context, 14)(context, staging, 0, 1, 0, out data));
+                try
+                {
+                    Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format32bppRgb);
+                    try
+                    {
+                        BitmapData pixels = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
+                        try
+                        {
+                            byte[] row = new byte[width * 4];
+                            for (int y = 0; y < height; y++)
+                            { Marshal.Copy(IntPtr.Add(data.Data, checked(y * (int)data.RowPitch)), row, 0, row.Length); Marshal.Copy(row, 0, IntPtr.Add(pixels.Scan0, y * pixels.Stride), row.Length); }
+                        }
+                        finally { bitmap.UnlockBits(pixels); }
+                        return bitmap;
+                    }
+                    catch { bitmap.Dispose(); throw; }
+                }
+                finally { Method<Unmap>(context, 15)(context, staging, 0); }
+            }
+            finally { Release(ref staging); Release(ref texture); }
+        }
+    }
+}
