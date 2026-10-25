@@ -397,7 +397,8 @@ namespace CodexAutoResume
                     {
                         WindowFrame probe = await ReadBackground(connected, revision, true);
                         journal.Write("diagnostics.log", "capture-probe", "before=" + captured.ContentAt.ToString("O") + "; independent=" + probe.ContentAt.ToString("O") + "; previous-icon=" + lastObservedState + "; previous-pixels=" + captureWatchdog.LastSignature + "; independent-sequence=" + probe.ContentSequence, DateTime.UtcNow);
-                        captured.Dispose(); captured = probe;
+                        if (probe.NewerEvidenceThan(captured)) { captured.Dispose(); captured = probe; }
+                        else probe.Dispose();
                     }
                     catch (Exception error) { journal.Write("diagnostics.log", "capture-probe", "retained-live-session; " + error.Message, DateTime.UtcNow); }
                 }
@@ -456,7 +457,7 @@ namespace CodexAutoResume
                     {
                         if (!Current(connected, revision) || !automatic.Checked) return;
                         Rectangle freshCrop;
-                        if (fresh.ContentSequence <= frame.ContentSequence || !connected.LocateBackground(fresh, recognizer, null, out freshCrop, out reason) || freshCrop != crop)
+                        if (!fresh.NewerEvidenceThan(frame) || !connected.LocateBackground(fresh, recognizer, null, out freshCrop, out reason) || freshCrop != crop)
                         { BackgroundWait("后台点击前位置变化，等待重新定位"); return; }
                         Rectangle freshLocal = freshCrop; freshLocal.Offset(-fresh.Bounds.X, -fresh.Bounds.Y);
                         Detection again;

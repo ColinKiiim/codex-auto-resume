@@ -22,6 +22,8 @@ namespace CodexAutoResume
         public long ContentSequence;
         public long Sequence;
         public string Source;
+        internal bool NewerEvidenceThan(WindowFrame previous)
+        { return ContentSequence > previous.ContentSequence && ContentAt >= previous.ContentAt; }
         public bool ContentFresh(DateTime now) { return ContentAt != DateTime.MinValue && (now - ContentAt).TotalSeconds >= -1 && (now - ContentAt).TotalSeconds <= 5; }
         public void Dispose() { if (Image != null) { Image.Dispose(); Image = null; } }
     }

@@ -325,6 +325,13 @@ namespace CodexAutoResume
                 Check(!window.Ready(idle, start.AddSeconds(13)), "new triangle starts a new window " + state);
             }
             window.Reset(); Check(!window.Ready(idle, start.AddSeconds(30)), "pause or target change clears eligibility");
+            using (WindowFrame previous = new WindowFrame { ContentAt = start.AddSeconds(10), ContentSequence = 10 })
+            using (WindowFrame independent = new WindowFrame { ContentAt = start.AddSeconds(9), ContentSequence = 11 })
+            {
+                Check(!independent.NewerEvidenceThan(previous), "a newer acquisition counter cannot authorize older pixel evidence");
+                independent.ContentAt = start.AddSeconds(11);
+                Check(independent.NewerEvidenceThan(previous), "newer independent pixel evidence can supersede the live observation");
+            }
             CaptureWatchdog watchdog = new CaptureWatchdog();
             watchdog.Observe("square", start);
             Check(!watchdog.Due(start.AddSeconds(11), start.AddSeconds(11)), "quiet capture probes are low frequency");
