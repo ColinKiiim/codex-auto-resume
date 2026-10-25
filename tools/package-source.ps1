@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $packageDirectory = Join-Path $projectRoot 'packages'
 New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
-$archivePath = Join-Path $packageDirectory 'CodexAutoResume-1.3.1-source.zip'
+$archivePath = Join-Path $packageDirectory 'CodexAutoResume-1.4.0-source.zip'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $filePaths = @()
 foreach ($fileName in @('LICENSE', 'NOTICE', 'README.md', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }

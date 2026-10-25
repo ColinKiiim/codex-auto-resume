@@ -1,12 +1,12 @@
-# CodexAutoResume 1.3.1
+# CodexAutoResume 1.4.0
 
-MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标和分组，不与启动它的 ChatGPT/Codex 窗口共用任务栏身份。源码包位于 `packages/CodexAutoResume-1.3.1-source.zip`。
+MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标和分组，不与启动它的 ChatGPT/Codex 窗口共用任务栏身份。源码包位于 `packages/CodexAutoResume-1.4.0-source.zip`。
 
 识别 Codex 蓝色圆按钮并自动恢复运行的 Windows 小工具。支持自动定位、多区域人工选择、备用手动标定，以及单文件便携使用。
 
-## 后台模式（1.3.1 实验功能）
+## 后台模式（1.4.0 实验功能）
 
-1.3.1 新增整次捕获 3 秒超时保护：超时停止监控，迟到画面丢弃，未结束的系统调用不会导致堆积更多捕获任务。
+1.3.1 加入整次捕获 3 秒超时保护：超时停止监控，迟到画面丢弃，未结束的系统调用不会导致堆积更多捕获任务。1.4.0 新增内置后台自测。
 
 勾选“后台模式”后，先将 Codex 放到前台并按主窗口显示的 F8 组合键连接。观察识别正确后勾选“允许自动点击”，随后可以切到其他应用，把 Codex 完全盖住；保持 Codex 未最小化。切换前台/后台模式会清除连接，需要重新按 F8。
 
@@ -19,6 +19,10 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 实现、验证和限制见 [后台模式验证记录](docs/background-mode.md)。
 
 ## 单文件迁移
+
+新电脑可先点击“本机自检”（F2），再点击“后台自测”（F4）。后台自测会打开工具自己的按钮窗口，用不透明窗口完全遮挡它，读取新帧、后台点击一次并验证连续方块，以及鼠标/前台窗口保持不变。通常只需几秒，请暂勿操作鼠标或切换窗口；关闭自测遮挡窗口，或按主窗口显示的 F10 组合键可取消。自测期间原监控保持停止，完成后不会自动重启监控。
+
+自测使用的代码和控件均在同一个 EXE 内，不需要另装浏览器、测试程序或携带图片。它仅测试自带窗口，不会点击 Codex 或发送消息；自测通过不能替代真实 Codex 暂停到恢复的兼容性验证。
 
 **只需复制 `release/CodexAutoResume.exe` 一个文件到另一台 Windows 10/11 x64 电脑，双击运行。** 不需要复制 assets、源码、配置文件或整个项目，不需要 Python、SDK、API Key 或联网服务。
 
@@ -51,7 +55,7 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 
 点击“使用说明”或按 F1 可查看内置说明，迁移时无需携带 README。可先点“打开演示”，测试图标切换、双区域、按钮换位置及窗口最大化。
 
-在主窗口按 F2 执行本机自检；按 F3 查看内嵌 MIT 许可证。独立图标和许可证均在 EXE 内，迁移仍只需要一个 EXE。
+在主窗口按 F2 执行本机自检；F3 查看内嵌 MIT 许可证；F4 执行完全遮挡后台自测。独立图标、许可证和自测均在 EXE 内，迁移仍只需要一个 EXE。
 
 ## 四种状态
 
@@ -87,6 +91,7 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 - `src/Native.cs`：窗口校验、自动/手动定位、截图与输入。
 - `src/WindowCapture.cs`：WinRT/D3D11 后台窗口捕获与新帧校验。
 - `src/BackgroundClick.cs`：子窗口坐标换算和后台消息输入。
+- `src/BackgroundDiagnostics.cs`：内置完全遮挡自测，支持 F4 和命令行 `--background-self-check 报告路径`。
 - `src/Selection.cs`：多区域确认、所选区域跟踪。
 - `src/App.cs`：中文界面、内置说明与交互演示。
 - `src/Portable.cs`：内嵌资源自检、版本与用户数据目录。
@@ -94,6 +99,7 @@ MIT 开源项目；完整许可证见 [LICENSE](LICENSE)。独立任务栏图标
 - `tools/build-icon.ps1`：生成各分辨率图标；`tools/package-source.ps1`：打包开源源码。
 - `tests/Tests.cs`：真实图片、缩放位移、负样本、定位和状态机测试。
 - `tests/portable-smoke.ps1`：将一个 EXE 单独复制到新临时目录并自检。
+- `tests/background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe`：对隔离的单 EXE 运行内置后台自测；需要可交互桌面，期间请暂勿操作。
 - `build.ps1 -BackgroundTests`：完全遮挡的演示按钮端到端测试。
 - `build.ps1 -ChromiumTests`：使用本机 Chrome 和隔离临时配置测试 HTML 按钮；只用于开发，不是程序运行依赖。
 - `build.ps1 -TargetProbe`：真实 Codex 完全遮挡时的只读捕获探测，不点击目标。

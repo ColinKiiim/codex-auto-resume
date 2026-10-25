@@ -16,6 +16,7 @@ namespace CodexAutoResume
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             if (args.Length == 2 && args[0] == "--self-check") return Portable.SelfCheck(args[1]);
+            if (args.Length == 2 && args[0] == "--background-self-check") return BackgroundDiagnostics.RunCommand(args[1]);
             bool created;
             using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, "Local\\CodexAutoResume-v1", out created))
             {
@@ -45,6 +46,8 @@ namespace CodexAutoResume
         readonly string logDirectory = Path.Combine(Portable.DataDirectory, "logs");
         DemoForm demo;
         bool monitoring, updating;
+        bool diagnosing;
+        System.Threading.CancellationTokenSource diagnosticCancellation;
         int generation;
         string lastStatus = "";
         string shortcut = "Ctrl+Alt";
@@ -52,15 +55,15 @@ namespace CodexAutoResume
 
         public MainForm()
         {
-            Text = "CodexAutoResume 1.3.1 · 后台模式（实验） · 单文件便携版";
+            Text = "CodexAutoResume 1.4.0 · 后台模式（实验） · 单文件便携版";
             ShowInTaskbar = true; ShowIcon = true; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10);
-            ClientSize = new Size(760, 680); MinimumSize = new Size(720, 680);
+            ClientSize = new Size(760, 720); MinimumSize = new Size(720, 720);
             StartPosition = FormStartPosition.CenterScreen;
             TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 7 };
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
@@ -74,9 +77,11 @@ namespace CodexAutoResume
             Button save = new Button { Text = "保存局部诊断图", AutoSize = true };
             Button help = new Button { Text = "使用说明", AutoSize = true };
             Button check = new Button { Text = "本机自检", AutoSize = true };
+            Button backgroundCheck = new Button { Text = "后台自测 (F4)", AutoSize = true };
             controls.Controls.Add(stop); controls.Controls.Add(showDemo); controls.Controls.Add(save);
             controls.Controls.Add(help);
             controls.Controls.Add(check);
+            controls.Controls.Add(backgroundCheck);
             layout.Controls.Add(controls, 0, 2);
             FlowLayoutPanel options = new FlowLayoutPanel { Dock = DockStyle.Fill };
             options.Controls.Add(automatic); options.Controls.Add(new Label { Text = "手动取样(px)", AutoSize = true, Padding = new Padding(12, 4, 0, 0) }); options.Controls.Add(cropSize);
@@ -91,8 +96,9 @@ namespace CodexAutoResume
             save.Click += delegate { SaveDiagnostic(); };
             help.Click += delegate { ShowHelp(); };
             check.Click += delegate { ShowSelfCheck(); };
+            backgroundCheck.Click += delegate { ShowBackgroundSelfCheck(); };
             KeyPreview = true;
-            KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } };
+            KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } else if (e.KeyCode == Keys.F4) { ShowBackgroundSelfCheck(); e.Handled = true; } };
             automatic.CheckedChanged += delegate { generation++; gate.BreakStreak(); SetStatus(automatic.Checked ? "自动点击已允许；后台模式可在被遮挡时尝试恢复" : "仅观察模式：不会点击"); };
             background.CheckedChanged += delegate { target = null; Stop(background.Checked ? "后台模式已开启（实验）；先将 Codex 置于前台按 F8 组合键连接，再切到其他窗口" : "已切回前台模式，请按 F8 组合键重新连接"); };
             cropSize.ValueChanged += delegate { if (target != null && !target.Automatic) { target = null; Stop("手动取样尺寸已改变，请重新标定"); } };
@@ -125,6 +131,11 @@ namespace CodexAutoResume
             if (m.Msg == 0x0312)
             {
                 int id = m.WParam.ToInt32();
+                if (diagnosing)
+                {
+                    if (id == 3 && diagnosticCancellation != null) diagnosticCancellation.Cancel();
+                    base.WndProc(ref m); return;
+                }
                 if (id == 1 && toggle.Enabled) AutoStart();
                 else if (id == 2 && toggle.Enabled) Toggle();
                 else if (id == 3) Stop("紧急停止已触发");
@@ -166,6 +177,7 @@ namespace CodexAutoResume
         }
         void Toggle()
         {
+            if (diagnosing) return;
             if (monitoring) { Stop("已停止观察"); return; }
             if (target == null) { SetStatus("请切到 Codex，按 " + shortcut + "+F8 自动定位，或 F7 备用手动标定。"); return; }
             if (gate.Failed) { SetStatus("上次点击未确认成功；检查后按 " + shortcut + "+F8 重新定位，或 F7 手动标定。"); return; }
@@ -174,6 +186,7 @@ namespace CodexAutoResume
         }
         void Stop(string message)
         {
+            if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             generation++; monitoring = false; gate.BreakStreak(); toggle.Text = "开始观察"; SetStatus(message);
         }
         void TickMonitor()
@@ -299,10 +312,11 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "CodexAutoResume 1.3.1 · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和本说明均已内置。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n先选前台 / 后台模式，再切到 Codex 按 " + shortcut + "+F8 连接。\n多个候选必须手动选择确认。窗口位置和大小可以变化。\n备用标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察核对识别，再勾选允许自动点击。\n\n后台模式（实验）：可切到其他应用，允许窗口完全被盖住。\n使用系统窗口捕获，可能显示系统黄色捕获边框。\n不主动激活目标或移动鼠标；应用是否接受后台消息取决于版本。\n已验证演示和 Chromium 测试页后台点击、真实 Codex 遮挡捕获；\n真实 Codex 的暂停到恢复尚需实际暂停场景验证。\n最小化时暂停；黑屏、无新帧或未知图形均不点击。\n8 秒未确认运行方块则停止，不会循环重试。\n前台模式仍要求按钮可见且目标在前台。\n\n三角形可恢复；方块运行中；向上箭头发送；声波语音。\n每次重启后需要按快捷键连接 Codex。日志及主动保存局部图：\n" + logDirectory + "\nF2 本机自检；F3 查看 MIT 许可。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "CodexAutoResume 1.4.0 · 单文件便携版\n\n只复制这一个 EXE 到其他 Windows 10/11 x64 电脑即可使用。\n识别样本、图标、MIT 许可和本说明均已内置。\n依赖系统 .NET Framework 4.x；后台功能需要 Windows 10 1903+。\n\n先选前台 / 后台模式，再切到 Codex 按 " + shortcut + "+F8 连接。\n多个候选必须手动选择确认。窗口位置和大小可以变化。\n备用标定：鼠标放到按钮中心，按 " + shortcut + "+F7。\n" + shortcut + "+F9 开始/停止；" + shortcut + "+F10 紧急停止。\n先用默认只观察核对识别，再勾选允许自动点击。\n\n后台模式（实验）：可切到其他应用，允许窗口完全被盖住。\n使用系统窗口捕获，可能显示系统黄色捕获边框。\n不主动激活目标或移动鼠标；应用是否接受后台消息取决于版本。\n已验证演示和 Chromium 测试页后台点击、真实 Codex 遮挡捕获；\n真实 Codex 的暂停到恢复尚需实际暂停场景验证。\n最小化时暂停；黑屏、无新帧或未知图形均不点击。\n8 秒未确认运行方块则停止，不会循环重试。\n前台模式仍要求按钮可见且目标在前台。\n\n三角形可恢复；方块运行中；向上箭头发送；声波语音。\n每次重启后需要按快捷键连接 Codex。日志及主动保存局部图：\n" + logDirectory + "\nF2 本机自检；F3 MIT 许可；F4 完全遮挡后台自测。\n自测请暂勿移动鼠标；关闭自测窗口或 F10 组合键可取消。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {
+            if (diagnosing) return;
             Stop("正在本机自检，监控已停止");
             try
             {
@@ -311,6 +325,27 @@ namespace CodexAutoResume
                 MessageBox.Show(this, "本机自检通过。\n此检查不会发送鼠标点击；自动恢复请用演示窗口验证。\n\n" + report, "本机自检", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception e) { SetStatus("本机自检失败：" + e.Message); MessageBox.Show(this, e.ToString(), "本机自检失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+        async void ShowBackgroundSelfCheck()
+        {
+            if (diagnosing) return;
+            if (updating || sampler.IsBusy) { Stop("上一次捕获尚未结束；请稍后再点后台自测，若持续等待请重启工具"); return; }
+            Stop("正在后台自测；监控已停止，请暂勿移动鼠标或切换窗口");
+            diagnosing = true;
+            diagnosticCancellation = new System.Threading.CancellationTokenSource();
+            try
+            {
+                string report = await BackgroundDiagnostics.RunAsync(this, diagnosticCancellation.Token, sampler);
+                if (IsDisposed) return;
+                SetStatus("后台自测通过：完全遮挡下恢复一次，鼠标和前台窗口保持不变");
+                MessageBox.Show(this, report.Replace("PASS: fully occluded background diagnostic", "后台自测通过。"), "后台自测通过", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (OperationCanceledException) { if (!IsDisposed) SetStatus("后台自测已取消；监控保持停止"); }
+            catch (Exception e)
+            {
+                if (!IsDisposed) { SetStatus("后台自测未通过：" + e.Message); MessageBox.Show(this, e.Message, "后台自测未通过", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            }
+            finally { diagnosticCancellation.Dispose(); diagnosticCancellation = null; diagnosing = false; }
         }
         void ShowLicense()
         {
@@ -350,6 +385,7 @@ namespace CodexAutoResume
         }
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             timer.Stop(); timer.Dispose();
             for (int i = 1; i <= 4; i++) Native.UnregisterHotKey(Handle, i);
             if (preview.Image != null) preview.Image.Dispose(); if (demo != null) demo.Dispose(); base.OnFormClosed(e);

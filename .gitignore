@@ -9,3 +9,5 @@ packages/
 tests/portable-result.txt
 tests/migration-result.txt
 tests/source-package-result.txt
+tests/background-portable-result.txt
+docs/background-progress.md
