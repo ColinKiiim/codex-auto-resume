@@ -21,7 +21,7 @@ Check ($checksumLines.Count -eq 4) 'checksums include executable, source, notes 
 $githubExport = Join-Path $outputRoot 'github\v1.5.0'
 $draft = Get-Content -LiteralPath (Join-Path $githubExport 'release-draft.json') -Raw | ConvertFrom-Json
 $body = [IO.File]::ReadAllText((Join-Path $githubExport 'release-body.md'))
-Check ($draft.name -eq 'CodexAutoResume v1.5.0' -and $draft.tag_name -eq 'v1.5.0' -and $draft.draft -and -not $draft.prerelease) 'GitHub export uses a product/version title and remains a draft'
+Check ($draft.name -eq 'v1.5.0 · CodexAutoResume' -and $draft.tag_name -eq 'v1.5.0' -and $draft.draft -and -not $draft.prerelease) 'GitHub title starts with the version for readable sidebar navigation and remains a draft'
 Check ($draft.body -eq $body -and $body.StartsWith('## 更新日志（中文）') -and $body.Contains('## Changelog (English)')) 'GitHub body preserves both languages without a duplicate release title'
 $downloadDirectory = Join-Path $githubExport 'assets'
 $downloadSums = @(Get-Content -LiteralPath (Join-Path $downloadDirectory 'SHA256SUMS.txt'))

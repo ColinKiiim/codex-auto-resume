@@ -4,7 +4,9 @@
 
 ## Release 展示格式
 
-每个 GitHub Release 使用统一标题 **CodexAutoResume v主.次.补丁**，例如 `CodexAutoResume v1.5.3`。
+每个 GitHub Release 使用统一标题 **v主.次.补丁 · CodexAutoResume**，例如 `v1.5.3 · CodexAutoResume`。版本号放在前面，左侧导航较窄时也能直接区分各版本。
+
+浏览完整历史使用[全部 Releases](https://github.com/ColinKiiim/codex-auto-resume/releases)：左侧是版本导航，右侧可以向下连续查看。`/releases/tag/v版本号` 是单版详情页，`/releases/latest` 跳转到最新版详情。
 
 正文先中文、后英文，两部分使用相同版本号和日期，按本次实际变化选用以下分类：
 
@@ -43,7 +45,7 @@ v1.5.3/
     SHA256SUMS.txt
 ```
 
-GitHub 标题填写 `CodexAutoResume v1.5.3`，正文粘贴 `release-body.md`，将 `assets/` 内的三个文件上传到 Assets。`release-draft.json` 可用于后续发布工具集成，它不会自行创建或发布远程 Release。导出不包含仓库地址，tag 需先与实际源码对应。
+GitHub 标题填写 `v1.5.3 · CodexAutoResume`，正文粘贴 `release-body.md`，将 `assets/` 内的三个文件上传到 Assets。`release-draft.json` 可用于后续发布工具集成，它不会自行创建或发布远程 Release。导出不包含仓库地址，tag 需先与实际源码对应。
 
 普通用户下载 EXE，开发者下载 source.zip。GitHub 自动提供的 Source code ZIP/TAR 是 tag 的仓库快照；手动上传的 source.zip 是构建脚本生成的版本源码包。
 

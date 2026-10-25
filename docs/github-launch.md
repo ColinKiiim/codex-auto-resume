@@ -17,7 +17,7 @@ About / Description：
 1. 创建公开仓库，上传源码、根目录 README / 英文 README、LICENSE、NOTICE、CONTRIBUTING、llms.txt、`.github/`、docs、assets、src、tests、tools 和构建文件。
 2. 按 `.gitignore` 排除生成目录、日志和私人开发记录。完整对话截图不上传。
 3. 配置 About 简介与 Topics，启用 Issues。根目录 README 是主要入口，`.github/` 下不要另建覆盖首页的 README。
-4. 按 [发布流程](releasing.md) 创建正式 GitHub Releases：使用产品名加版本号作为标题，粘贴 `release/github/v版本号/release-body.md`，将其 `assets/` 内的 EXE、源码 ZIP、SHA256SUMS.txt 上传到对应版本，最新版标记 Latest。
+4. 按 [发布流程](releasing.md) 创建正式 GitHub Releases：使用“版本号 · CodexAutoResume”作为标题，粘贴 `release/github/v版本号/release-body.md`，将其 `assets/` 内的 EXE、源码 ZIP、SHA256SUMS.txt 上传到对应版本，最新版标记 Latest。
 5. 核对 Release tag 对应的源码版本。README 中保留了与账号名无关的下载操作说明；仓库地址确定后，可补上实际的 Releases / Issues 直达链接。
 
 `dist/`、`release/`、`packages/` 用于本机构建和分发，不进入源码仓库。上传源码不会自动创建 Releases，网页右侧的下载入口需由正式发布建立。

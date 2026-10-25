@@ -86,7 +86,7 @@ if (Test-Path -LiteralPath $versionDirectory) {
     New-Item -ItemType Directory -Path $staging | Out-Null
     foreach ($inputAsset in $inputs) { Copy-Item -LiteralPath $inputAsset.path -Destination (Join-Path $staging $inputAsset.name) }
     $metadata = [ordered]@{
-        schemaVersion = 1; version = $Version; tag = $tag; name = ('CodexAutoResume ' + $tag); platform = 'windows'; architecture = 'x64'; license = 'MIT'
+        schemaVersion = 1; version = $Version; tag = $tag; name = ($tag + ' · CodexAutoResume'); platform = 'windows'; architecture = 'x64'; license = 'MIT'
         binaryOrigin = $BinaryOrigin
         archivedAt = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(8)).ToString('o')
         assets = $assets
@@ -123,7 +123,7 @@ foreach ($item in $versions) {
     $body = ($normalizedNotes -replace '\A#[^\r\n]+\n\s*', '').Trim() + "`n"
     Write-Atomic (Join-Path $export 'release-body.md') $body
     Write-Atomic (Join-Path $export 'release-draft.json') ([ordered]@{
-        tag_name = $item.tag; name = ('CodexAutoResume ' + $item.tag)
+        tag_name = $item.tag; name = ($item.tag + ' · CodexAutoResume')
         body = $body; draft = $true; prerelease = $false
     } | ConvertTo-Json -Depth 4)
     $downloadAssets = @($item.assets | Where-Object { $_.kind -in @('portable-executable', 'source') })
@@ -139,7 +139,7 @@ $latestVersion = if (Test-Path -LiteralPath $latestPath) { (Get-Content -Literal
 Write-Atomic (Join-Path $OutputRoot 'releases.json') ([ordered]@{ schemaVersion = 1; latest = $latestVersion; releases = $versions } | ConvertTo-Json -Depth 8)
 $readme = @('# CodexAutoResume Releases', '', 'Windows x64 便携版：[`CodexAutoResume.exe`](CodexAutoResume.exe)。下载后双击运行。', '', '## 历史版本', '', '| Release | Windows x64 | Source | 更新日志 | SHA256 |', '|---|---|---|---|---|')
 foreach ($item in $versions) {
-    $label = 'CodexAutoResume v' + $item.version
+    $label = $item.tag + ' · CodexAutoResume'
     if ($item.version -eq $latestVersion) { $label += ' · Latest' }
     $program = $item.assets | Where-Object { $_.kind -eq 'portable-executable' }
     $sources = $item.assets | Where-Object { $_.kind -eq 'source' }
