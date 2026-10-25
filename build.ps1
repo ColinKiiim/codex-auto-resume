@@ -1,6 +1,7 @@
-param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$BuildOnly)
+﻿param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
+& (Join-Path $projectRoot 'tools/assert-version-policy.ps1') -Version ([IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim())
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x C# compiler was not found.' }
 $distPath = Join-Path $projectRoot 'dist'
