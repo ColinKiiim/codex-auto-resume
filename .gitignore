@@ -11,3 +11,6 @@ tests/migration-result.txt
 tests/source-package-result.txt
 tests/background-portable-result.txt
 docs/background-progress.md
+
+# Personal notes, private diagnostics and temporary agent output
+/.local/

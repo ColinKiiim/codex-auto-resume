@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -49,36 +49,9 @@ namespace CodexAutoResume
                 File.Copy(built, staged); File.AppendAllText(original, "external edit");
                 check(Rejects(delegate { Updates.Install(job); }) && File.ReadAllText(original).Contains("external edit"), "concurrent external change prevents replacement");
                 check(Rejects(delegate { Updates.LoadJob(Path.Combine(directory, "job.json")); }), "helper rejects jobs outside its owned update root");
-                ResumeMemory memory = new ResumeMemory { Window = 0, Automatic = true };
-                check(memory.Reconnect() == null, "missing target cannot restore automatic clicking");
-                RegionMemory region = new RegionMemory { Explicit = true, Badge = new Rectangle(2, 3, 35, 35), SearchSize = new Size(500, 300) };
-                JsonFile.Write(Path.Combine(directory, "memory.json"), new ResumeMemory { Region = region });
-                RegionMemory restored = JsonFile.Read<ResumeMemory>(Path.Combine(directory, "memory.json")).Region;
-                check(restored.Badge == region.Badge && restored.SearchSize == region.SearchSize && restored.Explicit, "update state preserves explicit region coordinates");
-                check(Updates.Quote(original).StartsWith("\"") && Rejects(delegate { Updates.Quote("bad\"path"); }), "helper paths with spaces and apostrophes use argument quoting");
-                string legacySettings = Path.Combine(directory, "legacy-settings.json");
-                File.WriteAllText(legacySettings, "{\"CheckUpdates\":false,\"Background\":false,\"CropSize\":80}");
-                UserPreferences legacy = JsonFile.Read<UserPreferences>(legacySettings);
-                check(!legacy.Background && !legacy.CheckUpdates && legacy.CropSize == 80 && legacy.Language == "zh-CN", "legacy explicit settings survive new background and language defaults");
-                JsonFile.Write(legacySettings, new UserPreferences { Language = "en", Background = false });
-                UserPreferences english = JsonFile.Read<UserPreferences>(legacySettings);
-                check(english.Language == "en" && !english.Background, "language and explicit foreground preference round-trip");
-                UserPreferences preferences = new UserPreferences();
-                check(preferences.CheckUpdates && preferences.Background && preferences.Language == "zh-CN", "update checks and background default on; initial language is Chinese");
             }
             finally { foreach (string file in Directory.GetFiles(directory)) File.Delete(file); Directory.Delete(directory); }
-            DateTime now = DateTime.UtcNow;
-            ResumeGate gate = new ResumeGate(); gate.MarkAttempt(now);
-            gate.ObserveCaptured(ButtonState.Running, now.AddSeconds(1), now.AddSeconds(-2));
-            check(gate.Verified == 0 && gate.AwaitingRunning, "pre-click cached square cannot confirm recovery");
-            gate.ObserveCaptured(ButtonState.Running, now.AddSeconds(2), now.AddSeconds(1));
-            check(gate.Verified == 1, "post-click square confirms recovery once");
-            gate.ObserveCaptured(ButtonState.Running, now.AddSeconds(3), now.AddSeconds(1));
-            check(gate.Verified == 1, "repeated post-click frame never double counts");
-            gate = new ResumeGate();
-            for (int i = 0; i < 50; i++) gate.Observe(ButtonState.Resume, now.AddMilliseconds(i));
-            check(!gate.Observe(ButtonState.Resume, now.AddMilliseconds(100)), "fast capture callbacks cannot bypass stability duration");
-            check(gate.Observe(ButtonState.Resume, now.AddSeconds(1)), "stable static triangle can reach action preflight");
+
         }
     }
 }

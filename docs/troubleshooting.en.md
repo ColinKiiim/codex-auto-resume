@@ -17,7 +17,7 @@ The utility does not alter server capacity or account access. A resume click can
 
 ## Is at capacity the same as running out of usage?
 
-Treat them separately when investigating. Read the complete message and check account usage. OpenAI’s [API error reference](https://developers.openai.com/api/docs/guides/error-codes) distinguishes temporary overload from quota and billing errors; those API categories are not a definitive diagnosis of every desktop message. This utility does not inspect API responses or account usage.
+Treat them separately when investigating. Read the complete message and check account usage. OpenAI’s [API error reference](https://developers.openai.com/api/docs/guides/error-codes) distinguishes temporary overload from quota and billing errors; those categories do not diagnose every desktop message. Resume decisions use button graphics, while the footer reads quota through the local Codex component for reference.
 
 ## How can I automatically resume Codex instead of clicking every time?
 

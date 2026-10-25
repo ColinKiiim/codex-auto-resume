@@ -63,6 +63,10 @@ It automates the resume-button interaction. A resumed request can still fail whi
 
 The current implementation targets the Codex desktop window on Windows x64. It is not a CLI retry wrapper or browser extension.
 
+### Can it show remaining Codex usage?
+
+The footer shows compact quota bars for the current local Codex login. Click for account/source details, reset times and refresh. It reuses the target installation's bundled App Server and does not import accounts or manage tokens. A missing or unsupported component leaves auto-resume available. Custom login environments and another physical PC still require verification; see the [usage guide](docs/user-guide.md).
+
 ### Does it send messages or approve requests?
 
 Only a strictly recognized resume triangle triggers a click. Running, send, voice, and question states do not trigger clicks. Automatic clicking is off at startup.

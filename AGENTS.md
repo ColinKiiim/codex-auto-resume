@@ -2,9 +2,20 @@
 
 ## Discussion tracking and implementation authorization
 
-- Record actionable discussion outcomes, reported problems, proposed solutions, and unresolved decisions in `TODO.md` during the same turn when useful. Update existing entries rather than duplicating them; distinguish user requirements from proposals that have not been agreed.
-- Read `TODO.md` when continuing project work so pending decisions do not depend on chat context. Keep task status and decisions current as work progresses.
-- On 2026-10-25 the user explicitly authorized implementing all current TODO items (“把todo都做了”), ending the previous discussion-only phase. Continue recording new discussion outcomes; a future discussion-only restriction must still be respected.
+- Read `TODO.md` when continuing project work. It is the current list of unfinished work, not a transcript or a completed-task archive. Record actionable new requirements and unresolved decisions during the same turn, updating existing entries instead of duplicating them; distinguish user requirements from proposals.
+- Keep stable task identifiers. Each active item must state its current status, remaining work and acceptance criteria. Replace superseded proposals with the current decision; retain only the context needed to act correctly.
+- When an item is completed and the required validation/delivery is finished, remove it from the active TODO in the same turn. Preserve a concise completion record and evidence in the relevant changelog, release/validation document or a dated file under `docs/history/`. Do not leave completed checklists or contradictory “待实施 / 已完成” descriptions in TODO.
+- For partially completed items, archive the completed portion and keep only the outstanding follow-up in TODO. Code completion does not complete an explicitly required real-device verification; keep that verification open with its actual limitation.
+- Before ending a turn that changes task status, check the active TODO for completed entries, obsolete “latest” instructions, duplicated plans and stale release status. If no work remains, say so briefly rather than retaining old tasks.
+- Historical snapshots under `docs/history/` are reference evidence, not current instructions. Read them only when needed; current user instructions, this file and the active TODO determine the present scope. Do not overwrite an existing snapshot to rewrite the past.
+- The earlier “把todo都做了” authorization concerned the tasks present at that time; the completed 1.1.8–1.1.12 work must not be replayed as new work. Recording a new proposal does not itself authorize implementing or publishing it; follow the user's current task scope without asking again for actions already authorized.
+
+## Project records and local-only material
+
+- Keep shared project rules (`AGENTS.md`), current work (`TODO.md`), useful design/decision history (`docs/history/`) and public validation/release summaries in Git. Internal maintenance purpose alone is not a reason to ignore a document needed by future contributors or devices.
+- Put personal scratch notes, raw diagnostics, private screenshots and temporary agent output in the ignored root `.local/` or existing ignored output/log directories. Do not mix raw private material into tracked design/history documents; never include credentials or tokens.
+- Shared ignore rules belong in `.gitignore`; developer-specific exclusions may use `.git/info/exclude` or a global Git ignore file. Adding an ignore rule does not remove files already tracked, and is not a privacy or access-control mechanism.
+- Source ZIP selection is independent of `.gitignore`. Keep local-only material outside the allowlisted source directories; if adding private paths inside one of those directories, update the package exclusion and verification before publishing. The root `.local/` is outside the current source-package allowlist.
 
 ## Versioning — explicit user decision
 
@@ -19,9 +30,16 @@
 
 - Short Chinese UI labels and explanations that are not prose paragraphs omit a final Chinese full stop (。). Keep meaningful punctuation inside paragraphs.
 - Retain native system window chrome; bitmap preview nonclient rendering is not evidence that the actual system frame needs replacement.
+- Describe validation by the behaviors and environments covered. If reporting a numeric test total, call it an assertion count and explain material parameterized repetition; do not present thousands of repeated assertions as thousands of independent scenarios or as coverage of untested real devices.
+
+## Minimal necessary tests — explicit user decision
+
+- Keep tests only where a failure can cause unintended clicks, ignore active user input, accept stale/wrong-target evidence, corrupt an update/release, mix account data, hang a query or leak owned processes. Keep one small end-to-end recovery smoke and focused OS/protocol/rollback checks where unit tests cannot cover the boundary.
+- Use a few representative regression samples. Do not restore exhaustive font/digit/scale/offset matrices, cosmetic layout/copy/preview tests, long repetitive demo workflows or duplicate portability suites without an explicit need tied to a real defect or a user request.
+- Remove obsolete test files together with their build flags and current documentation references. Preserve historical validation records as history, clearly distinguish prior coverage from tests maintained now, and do not delete or weaken an essential assertion merely to conceal a failure.
 
 ## Remote publishing — explicit user default
 
 - On 2026-10-25 the user explicitly requested that completed releases default to committing and pushing source, creating the matching version tag, and publishing the complete GitHub Release with executable, source archive and SHA256 checksums. A local build/export alone does not finish release delivery. No repeated approval is required unless the user restricts remote changes in that task.
 - Verify the published official latest-release endpoint and assets after publication; keep archived source and binaries immutable and make each tag match its own source snapshot.
-- The user subsequently requested completing the remaining TODO items. Implement items 5–8 for 1.1.11, following the latest 1.5-second idle-window requirement; do not introduce a manual-pause latch.
+- Items 5–8 were implemented and released in 1.1.11–1.1.12; only the affected-device follow-up recorded in the current TODO remains open. Preserve the 1.5-second idle-window behavior and do not introduce a manual-pause latch unless the user explicitly changes that requirement.

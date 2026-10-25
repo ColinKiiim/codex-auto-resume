@@ -82,8 +82,8 @@ namespace CodexAutoResume
             targetTitle.TextAlign = modeTitle.TextAlign = ContentAlignment.MiddleLeft;
             targetName.Margin = modeName.Margin = Padding.Empty;
             connection.Controls.Add(targetTitle, 0, 0); connection.Controls.Add(targetName, 1, 0);
-            Button change = UiButton("更换", delegate { ChangeWindow(); }); change.Dock = DockStyle.Fill; change.Margin = new Padding(0, 3, 0, 3);
-            connection.Controls.Add(change, 2, 0); connection.Controls.Add(modeTitle, 0, 1); connection.Controls.Add(modeName, 1, 1); layout.Controls.Add(connection, 0, 2);
+            connection.SetColumnSpan(targetName, 2);
+            connection.Controls.Add(modeTitle, 0, 1); connection.Controls.Add(modeName, 1, 1); connection.SetColumnSpan(modeName, 2); layout.Controls.Add(connection, 0, 2);
 
             TableLayoutPanel options = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = new Padding(0, 8, 0, 8) };
             options.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); options.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -99,7 +99,7 @@ namespace CodexAutoResume
             recentLog.BackColor = BackColor; recentLog.Font = new Font(Font.FontFamily, 9); recentLog.WordWrap = false;
             history.Controls.Add(recentLog, 0, 1); history.SetColumnSpan(recentLog, 2); layout.Controls.Add(history, 0, 4);
             recoveryCount.AutoSize = false; recoveryCount.Dock = DockStyle.Fill; recoveryCount.Margin = Padding.Empty; recoveryCount.TextAlign = ContentAlignment.MiddleLeft;
-            layout.Controls.Add(recoveryCount, 0, 5); Controls.Add(layout);
+            InitializeUsageFooter(layout); Controls.Add(layout);
             stabilityTimer.Tick += delegate { if (monitoring && automatic.Checked && lastObservedState == ButtonState.Resume) TickMonitor(); else stabilityTimer.Stop(); };
             questionTimer.Tick += delegate { if (monitoring && questions.Waiting) TickMonitor(); else questionTimer.Stop(); };
             frameTimer.Tick += delegate { DispatchFrame(); };
@@ -175,7 +175,7 @@ namespace CodexAutoResume
             recentLog.UpdateHistory(UiText.Get(String.Join(Environment.NewLine, recentEvents.ToArray())), true);
             if (activityView != null && !activityView.IsDisposed) activityView.Text = UiText.Get(logBox.Text);
             tips.SetToolTip(preview, UiText.English ? "Latest captured area; click to enlarge" : "最近识别的局部画面；点击放大查看");
-            SavePreferences();
+            RenderUsage(); SavePreferences();
         }
 
         void ChangeWindow()
@@ -249,6 +249,7 @@ namespace CodexAutoResume
             CheckBox checkUpdates = new CheckBox { Text = "自动检查更新", AutoSize = true, Checked = preferences.CheckUpdates };
             checkUpdates.CheckedChanged += delegate { preferences.CheckUpdates = checkUpdates.Checked; nextUpdateCheck = DateTime.UtcNow.AddSeconds(1); SavePreferences(); }; common.Controls.Add(checkUpdates);
             common.Controls.Add(UiLabel("高级定位"));
+            Button chooseWindow = UiButton("选择窗口", delegate { ChangeWindow(); }); chooseWindow.Name = "ChooseWindow"; common.Controls.Add(chooseWindow);
             common.Controls.Add(UiButton("选择按钮区域", delegate { RequestRegion(); }));
             Label calibration = UiLabel("手动标定：将鼠标移到目标按钮中心，按 " + shortcut + "+F7"); common.Controls.Add(calibration);
             FlowLayoutPanel crop = new FlowLayoutPanel { AutoSize = true, Visible = target != null && !target.Automatic };

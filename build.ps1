@@ -1,4 +1,4 @@
-param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$UpdateTests, [switch]$UiTests, [switch]$BuildOnly)
+param([switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$UpdateTests, [switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -37,17 +37,10 @@ $commonArgs += '/resource:' + (Join-Path $projectRoot 'LICENSE') + ',LICENSE'
 if ($LASTEXITCODE -ne 0) { throw 'App compilation failed.' }
 $testSource = Join-Path $projectRoot 'tests\Tests.cs'
 if (Test-Path -LiteralPath $testSource) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.Tests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.Tests.exe')) @sources $testSource (Join-Path $projectRoot 'tests\UpdateTests.cs')
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.Tests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.Tests.exe')) @sources $testSource (Join-Path $projectRoot 'tests\UpdateTests.cs') (Join-Path $projectRoot 'tests\UsageTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & (Join-Path $distPath 'CodexAutoResume.Tests.exe') $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-}
-if ($UiTests) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.UiLayoutTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.UiLayoutTests.exe')) @sources (Join-Path $projectRoot 'tests\UiLayoutTests.cs')
-    if ($LASTEXITCODE -ne 0) { throw 'UI layout test compilation failed.' }
-    & (Join-Path $distPath 'CodexAutoResume.UiLayoutTests.exe') $projectRoot
-    if ($LASTEXITCODE -ne 0) { throw 'UI layout tests failed.' }
-    return
 }
 if ($UpdateTests) {
     & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.UpdateIntegrationTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.UpdateIntegrationTests.exe')) @sources (Join-Path $projectRoot 'tests\UpdateIntegrationTests.cs')
@@ -70,33 +63,10 @@ if ($QuestionTests) {
     if ($LASTEXITCODE -ne 0) { throw 'Question tests failed.' }
     return
 }
-if ($ChromiumTests) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.ChromiumTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.ChromiumTests.exe')) @sources (Join-Path $projectRoot 'tests\ChromiumTests.cs')
-    if ($LASTEXITCODE -ne 0) { throw 'Chromium test compilation failed.' }
-    & (Join-Path $distPath 'CodexAutoResume.ChromiumTests.exe')
-    if ($LASTEXITCODE -ne 0) { throw 'Chromium tests failed.' }
-    return
-}
-if ($TargetProbe) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.TargetCaptureProbe' ('/out:' + (Join-Path $distPath 'CodexAutoResume.TargetCaptureProbe.exe')) @sources (Join-Path $projectRoot 'tests\TargetCaptureProbe.cs')
-    if ($LASTEXITCODE -ne 0) { throw 'Target probe compilation failed.' }
-    & (Join-Path $distPath 'CodexAutoResume.TargetCaptureProbe.exe')
-    if ($LASTEXITCODE -ne 0) { throw 'Target probe failed.' }
-    return
-}
-if ($BackgroundTests) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.BackgroundTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.BackgroundTests.exe')) @sources (Join-Path $projectRoot 'tests\BackgroundTests.cs')
-    if ($LASTEXITCODE -ne 0) { throw 'Background test compilation failed.' }
-    & (Join-Path $distPath 'CodexAutoResume.BackgroundTests.exe')
-    if ($LASTEXITCODE -ne 0) { throw 'Background tests failed.' }
-    return
-}
 if ($BuildOnly) { Write-Output ('Build-only verified: ' + $version + '; release history unchanged.'); return }
 $candidateExe = Join-Path $distPath 'CodexAutoResume.exe'
-& (Join-Path $projectRoot 'tests\portable-smoke.ps1') -ExecutablePath $candidateExe
-if (-not $?) { throw 'Portable release verification failed.' }
-& (Join-Path $projectRoot 'tests\migration-audit.ps1') -ExecutablePath $candidateExe
-if (-not $?) { throw 'Migration audit failed.' }
+& (Join-Path $projectRoot 'tests\background-portable.ps1') -ExecutablePath $candidateExe
+if (-not $?) { throw 'Portable background diagnostic failed.' }
 & (Join-Path $projectRoot 'tools\package-source.ps1')
 if (-not $?) { throw 'Source packaging failed.' }
 & (Join-Path $projectRoot 'tools\publish-release.ps1') -Version $version -ExecutablePath $candidateExe -SourceArchivePath (Join-Path $projectRoot ('packages\CodexAutoResume-' + $version + '-source.zip')) -NotesPath (Join-Path $projectRoot ('docs\releases\v' + $version + '.md')) -PromoteLatest

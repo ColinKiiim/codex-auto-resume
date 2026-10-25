@@ -324,6 +324,7 @@ namespace CodexAutoResume
         }
         void HealthTick()
         {
+            UsagePulse();
             DateTime now = DateTime.UtcNow;
             string summary = activity.Summary(now, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + "；当前状态=" + statusSource;
             RefreshUi();
@@ -573,6 +574,7 @@ namespace CodexAutoResume
             monitoring = false; generation++;
             if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             lifetime.Cancel(); WindowCapture.FrameAvailable -= OnCaptureFrame;
+            if (usageCancellation != null) usageCancellation.Cancel();
             stabilityTimer.Stop(); stabilityTimer.Dispose();
             questionTimer.Stop(); questionTimer.Dispose();
             frameTimer.Stop(); frameTimer.Dispose();

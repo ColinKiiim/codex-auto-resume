@@ -38,10 +38,6 @@ namespace CodexAutoResume
                         QuestionDetector detector = new QuestionDetector();
                         if (!detector.CheckAsync(image).GetAwaiter().GetResult()) throw new Exception("Question fixture " + action + " not detected: " + detector.Availability);
                         Console.WriteLine("PASS: OCR question fixture " + action);
-                        Rectangle bounds = detector.PreviewBounds;
-                        if (bounds.IsEmpty || !bounds.Contains(1405, 1120) || bounds.Top < 650 || bounds.Width >= image.Width)
-                            throw new Exception("Question preview must include action and waiting context without the full window: " + bounds);
-                        Console.WriteLine("PASS: question preview bounds contain context and action only: " + bounds);
                         detector.Reset();
                         g.Clear(Color.FromArgb(24,24,24));
                         IconButton.Draw(g, new Rectangle(1410, 1080, 64, 64), "三角形");

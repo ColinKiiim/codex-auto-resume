@@ -12,6 +12,7 @@ namespace CodexAutoResume
         static readonly ConditionalWeakTable<Control, Binding> bindings = new ConditionalWeakTable<Control, Binding>();
         static readonly Dictionary<string, string> english = new Dictionary<string, string>
         {
+            { "选择窗口", "Select window" },
             { "向右三角形 · 可恢复", "Right triangle · Can resume" },
             { "白色方块 · 运行中", "White square · Working" },
             { "向上箭头 · 发送", "Up arrow · Send" },

@@ -19,7 +19,7 @@
 
 排查时应分开看。服务可用性、账号用量、网络连接和等待用户操作可能导致不同的中断；以完整提示和账号用量为依据。
 
-OpenAI 的 [API 错误说明](https://developers.openai.com/api/docs/guides/error-codes)区分模型临时过载与配额/计费相关错误。这是 API 的错误分类，不能直接当作每个桌面弹窗的确定诊断。对于 Codex 桌面应用，本工具只观察图形，不访问错误响应或账号额度。
+OpenAI 的 [API 错误说明](https://developers.openai.com/api/docs/guides/error-codes)区分模型临时过载与配额/计费相关错误。这是 API 的错误分类，不能直接当作每个桌面弹窗的确定诊断。恢复判断仍依据图形，不读取错误响应；底部额度通过本机 Codex 查询，仅供查看，不用于推断某次暂停原因。
 
 ## 如何让 Codex 暂停后自动继续，不用一直守着？
 
