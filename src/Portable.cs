@@ -6,8 +6,8 @@ using System.Reflection;
 [assembly: AssemblyTitle("CodexAutoResume")]
 [assembly: AssemblyDescription("Portable Codex resume button monitor")]
 [assembly: AssemblyProduct("CodexAutoResume")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.1.4.0")]
+[assembly: AssemblyFileVersion("1.1.4.0")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 CodexAutoResume contributors. MIT License.")]
 
 namespace CodexAutoResume
@@ -41,7 +41,7 @@ namespace CodexAutoResume
                 Recognizer recognizer = new Recognizer();
                 string[] names = { "resume", "running", "send", "send-current", "voice" };
                 ButtonState[] expected = { ButtonState.Resume, ButtonState.Running, ButtonState.Send, ButtonState.Send, ButtonState.Voice };
-                string report = "CodexAutoResume 1.5.0 portable self-check" + Environment.NewLine;
+                string report = "CodexAutoResume 1.1.4 portable self-check" + Environment.NewLine;
                 report += "Windows Graphics Capture available: " + WindowCapture.Supported + Environment.NewLine;
                 try { report += "Offline question OCR: " + QuestionDetector.PlatformSummary() + Environment.NewLine; }
                 catch { report += "Offline question OCR: unavailable; icon monitoring remains available" + Environment.NewLine; }
