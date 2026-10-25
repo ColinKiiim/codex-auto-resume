@@ -1,0 +1,231 @@
+using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Collections.Generic;
+
+namespace CodexAutoResume
+{
+    internal static class Native
+    {
+        [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] public struct RECT
+        {
+            public int Left, Top, Right, Bottom;
+            public Rectangle Rectangle { get { return System.Drawing.Rectangle.FromLTRB(Left, Top, Right, Bottom); } }
+        }
+        [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public INPUTUNION u; }
+        [StructLayout(LayoutKind.Explicit)] struct INPUTUNION
+        {
+            [FieldOffset(0)] public MOUSEINPUT mouse;
+            [FieldOffset(0)] public KEYBDINPUT keyboard;
+        }
+        [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT
+        { public int dx, dy; public uint mouseData, dwFlags, time; public UIntPtr dwExtraInfo; }
+        [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT
+        { public ushort vk, scan; public uint flags, time; public UIntPtr extra; }
+        [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint size, time; }
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+        [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
+        [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+        [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+        [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+        [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder b, int max);
+        [DllImport("user32.dll", SetLastError = true)] public static extern bool RegisterHotKey(IntPtr h, int id, uint modifiers, uint key);
+        [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr h, int id);
+        [DllImport("user32.dll")] static extern uint SendInput(uint count, INPUT[] inputs, int size);
+        [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+        [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+        [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+        [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+        [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true)] static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+        internal static void ValidatePlatform()
+        {
+            if (!Environment.Is64BitProcess || Marshal.SizeOf(typeof(INPUT)) != 40) throw new InvalidOperationException("The release requires Windows x64; INPUT layout must be 40 bytes.");
+            IntPtr module = GetModuleHandle("user32.dll");
+            foreach (string name in new string[] { "GetForegroundWindow", "WindowFromPoint", "GetAncestor", "GetCursorPos", "SetCursorPos", "GetWindowRect", "IsWindow", "IsIconic", "GetWindowThreadProcessId", "GetWindowTextW", "RegisterHotKey", "UnregisterHotKey", "SendInput", "GetAsyncKeyState", "GetLastInputInfo", "SetProcessDPIAware" })
+                if (module == IntPtr.Zero || GetProcAddress(module, name) == IntPtr.Zero) throw new InvalidOperationException("Missing Windows API: " + name);
+        }
+
+        public static void SetDpi()
+        {
+            try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return; } catch (EntryPointNotFoundException) { }
+            SetProcessDPIAware();
+        }
+        public static uint Dpi(IntPtr h) { try { return GetDpiForWindow(h); } catch { return 96; } }
+        public static string Title(IntPtr h) { StringBuilder s = new StringBuilder(512); GetWindowText(h, s, s.Capacity); return s.ToString(); }
+        public static int Pid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return (int)p; }
+        public static bool UserIdle()
+        {
+            foreach (int k in new int[] { 1, 2, 4, 16, 17, 18 }) if ((GetAsyncKeyState(k) & 0x8000) != 0) return false;
+            LASTINPUTINFO i = new LASTINPUTINFO { size = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)) };
+            return GetLastInputInfo(ref i) && unchecked((uint)Environment.TickCount - i.time) >= 700;
+        }
+        public static bool Uncovered(IntPtr h, Rectangle r)
+        {
+            if (GetForegroundWindow() != h || IsIconic(h)) return false;
+            for (int y = 0; y < 3; y++) for (int x = 0; x < 3; x++)
+            {
+                POINT p = new POINT { X = r.Left + 1 + x * (r.Width - 3) / 2, Y = r.Top + 1 + y * (r.Height - 3) / 2 };
+                if (GetAncestor(WindowFromPoint(p), 2) != h) return false;
+            }
+            return true;
+        }
+        public static Bitmap Capture(Rectangle r)
+        {
+            Bitmap b = new Bitmap(r.Width, r.Height);
+            try { using (Graphics g = Graphics.FromImage(b)) g.CopyFromScreen(r.Location, Point.Empty, r.Size); return b; }
+            catch { b.Dispose(); throw; }
+        }
+        public static bool Click(IntPtr h, Rectangle region, Point center, Func<bool> recheck)
+        {
+            if (!UserIdle() || !Uncovered(h, region)) return false;
+            POINT old;
+            if (!GetCursorPos(out old) || !SetCursorPos(center.X, center.Y)) return false;
+            try
+            {
+                // Recheck AFTER cursor movement; hover can change or replace the button.
+                if (!Uncovered(h, region) || !recheck()) return false;
+                POINT beforeInput;
+                if (!GetCursorPos(out beforeInput) || beforeInput.X != center.X || beforeInput.Y != center.Y ||
+                    !Uncovered(h, region)) return false;
+                INPUT[] events = new INPUT[2];
+                events[0].u.mouse.dwFlags = 0x0002;
+                events[1].u.mouse.dwFlags = 0x0004;
+                uint sent = SendInput(2, events, Marshal.SizeOf(typeof(INPUT)));
+                if (sent != 2)
+                {
+                    // A partial batch may leave the left button down. Release it.
+                    INPUT[] release = new INPUT[1]; release[0].u.mouse.dwFlags = 0x0004;
+                    SendInput(1, release, Marshal.SizeOf(typeof(INPUT)));
+                    throw new InvalidOperationException("SendInput incomplete (" + sent + "/2). Monitoring stopped.");
+                }
+                return true;
+            }
+            finally
+            {
+                POINT current;
+                if (GetCursorPos(out current) && current.X == center.X && current.Y == center.Y) SetCursorPos(old.X, old.Y);
+            }
+        }
+    }
+
+    internal sealed class Target
+    {
+        public IntPtr Window;
+        public int ProcessId;
+        public long ProcessStart;
+        public string ProcessPath;
+        public int Width, Height, OffsetX, OffsetY, CropSize;
+        public uint Dpi;
+        public bool Demo;
+        public bool Automatic;
+        readonly RegionSelection selection = new RegionSelection();
+        static bool Allowed(Process proc, string path, IntPtr h, bool allowDemo, out bool demo)
+        {
+            demo = allowDemo && proc.Id == Process.GetCurrentProcess().Id && Native.Title(h) == DemoForm.WindowTitle;
+            if (demo) return true;
+            FileVersionInfo info = FileVersionInfo.GetVersionInfo(path);
+            return IsCodexIdentity(proc.ProcessName, path, info.CompanyName, info.ProductName);
+        }
+        internal static bool IsCodexIdentity(string processName, string path, string company, string product)
+        {
+            if (!String.Equals(processName, "ChatGPT", StringComparison.OrdinalIgnoreCase) && !String.Equals(processName, "Codex", StringComparison.OrdinalIgnoreCase)) return false;
+            path = (path ?? "").Replace('/', '\\'); company = company ?? ""; product = product ?? "";
+            bool knownInstall = path.IndexOf("OpenAI.Codex_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                path.IndexOf("OpenAI.ChatGPT_", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                path.IndexOf("\\OpenAI\\Codex\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                path.IndexOf("\\OpenAI\\ChatGPT\\", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool metadata = company.IndexOf("OpenAI", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                (product.IndexOf("Codex", StringComparison.OrdinalIgnoreCase) >= 0 || product.IndexOf("ChatGPT", StringComparison.OrdinalIgnoreCase) >= 0);
+            return knownInstall || metadata;
+        }
+        public static Target AttachForeground(bool allowDemo)
+        {
+            IntPtr h = Native.GetForegroundWindow();
+            using (Process proc = Process.GetProcessById(Native.Pid(h)))
+            {
+                string path = proc.MainModule.FileName; bool demo;
+                if (!Allowed(proc, path, h, allowDemo, out demo)) throw new InvalidOperationException("请先将 Codex 窗口置于前台，再按自动定位快捷键。");
+                return new Target { Window = h, ProcessId = proc.Id, ProcessStart = proc.StartTime.ToUniversalTime().Ticks,
+                    ProcessPath = path, Demo = demo, Automatic = true };
+            }
+        }
+        public static Target Calibrate(bool allowDemo, int cropSize)
+        {
+            Native.POINT p; if (!Native.GetCursorPos(out p)) throw new InvalidOperationException("Cannot read cursor.");
+            IntPtr h = Native.GetAncestor(Native.WindowFromPoint(p), 2);
+            if (h != Native.GetForegroundWindow()) throw new InvalidOperationException("请先切换到 Codex，再标定。");
+            using (Process proc = Process.GetProcessById(Native.Pid(h)))
+            {
+                string path = proc.MainModule.FileName;
+                bool demo;
+                if (!Allowed(proc, path, h, allowDemo, out demo)) throw new InvalidOperationException("鼠标必须位于已安装的 Codex 窗口（或本工具演示窗口）内。");
+                Native.RECT r; if (!Native.GetWindowRect(h, out r)) throw new InvalidOperationException("Cannot read target bounds.");
+                Rectangle crop = new Rectangle(p.X - cropSize / 2, p.Y - cropSize / 2, cropSize, cropSize);
+                if (!r.Rectangle.Contains(crop) || !Native.Uncovered(h, crop)) throw new InvalidOperationException("按钮区域不完整或被遮挡，请重新标定。");
+                return new Target { Window = h, ProcessId = proc.Id, ProcessStart = proc.StartTime.ToUniversalTime().Ticks,
+                    ProcessPath = path, Width = r.Right - r.Left, Height = r.Bottom - r.Top, Dpi = Native.Dpi(h),
+                    OffsetX = p.X - r.Left, OffsetY = p.Y - r.Top, CropSize = cropSize, Demo = demo };
+            }
+        }
+        public bool Locate(Recognizer recognizer, Func<Bitmap, List<LocatedButton>, int> choose, out Rectangle crop, out string reason)
+        {
+            crop = Rectangle.Empty; reason = "";
+            if (!Native.IsWindow(Window)) { reason = "原窗口已关闭，请重新标定"; return false; }
+            try
+            {
+                using (Process p = Process.GetProcessById(ProcessId))
+                    if (Native.Pid(Window) != ProcessId || p.StartTime.ToUniversalTime().Ticks != ProcessStart || p.MainModule.FileName != ProcessPath)
+                    { reason = "进程已变化，请重新标定"; return false; }
+            }
+            catch { reason = "无法核实原进程，请重新标定"; return false; }
+            Native.RECT r;
+            if (!Native.GetWindowRect(Window, out r)) { reason = "无法读取窗口位置"; return false; }
+            if (Native.GetForegroundWindow() != Window || Native.IsIconic(Window))
+            { reason = "等待 Codex 在前台且按钮未被遮挡"; return false; }
+            if (Automatic)
+            {
+                // Fresh coordinates every frame: moving/resizing the window never reuses old pixels.
+                Rectangle screen = System.Windows.Forms.SystemInformation.VirtualScreen;
+                Rectangle visible = Rectangle.Intersect(r.Rectangle, screen);
+                int top = Math.Max(visible.Top, r.Bottom - Math.Max(200, (int)(r.Rectangle.Height * .45)));
+                Rectangle search = Rectangle.FromLTRB(visible.Left, top, visible.Right, visible.Bottom);
+                if (search.Width < 64 || search.Height < 64) { reason = "窗口可见区域过小"; return false; }
+                using (Bitmap scan = Native.Capture(search))
+                {
+                    List<LocatedButton> buttons = recognizer.FindButtons(scan);
+                    buttons.RemoveAll(delegate(LocatedButton b) { Rectangle region = b.Crop; region.Offset(search.Location); return !Native.Uncovered(Window, region); });
+                    Native.RECT after;
+                    if (!Native.GetWindowRect(Window, out after) || after.Rectangle != r.Rectangle || Native.GetForegroundWindow() != Window)
+                    { reason = "窗口正在变化，等待重新定位"; return false; }
+                    int index = selection.Resolve(buttons, scan.Size);
+                    if (index == -2) { reason = "正在自动寻找蓝色圆按钮；找不到时可用手动标定备用"; return false; }
+                    if (index == -1)
+                    {
+                        if (choose == null) { reason = "候选区域需要用户确认"; return false; }
+                        index = choose(scan, buttons);
+                        if (index < 0) { reason = "已取消区域选择"; return false; }
+                        selection.Confirm(index, buttons, scan.Size);
+                        // The dialog changed focus. Require another fresh scan after user returns.
+                        reason = "区域已确认，请切回 Codex 继续监控"; return false;
+                    }
+                    crop = buttons[index].Crop; crop.Offset(search.Location); return true;
+                }
+            }
+            if (r.Right - r.Left != Width || r.Bottom - r.Top != Height || Native.Dpi(Window) != Dpi)
+            { reason = "窗口大小或缩放已变化，请重新标定"; return false; }
+            crop = new Rectangle(r.Left + OffsetX - CropSize / 2, r.Top + OffsetY - CropSize / 2, CropSize, CropSize);
+            if (!Native.Uncovered(Window, crop)) { reason = "等待 Codex 在前台且按钮未被遮挡"; return false; }
+            return true;
+        }
+    }
+}

@@ -1,0 +1,11 @@
+dist/logs/
+tests/last-result.txt
+tests/demo-*.png
+tests/send-screenshot.png
+tests/gui-migration-case.json
+dist/
+release/
+packages/
+tests/portable-result.txt
+tests/migration-result.txt
+tests/source-package-result.txt

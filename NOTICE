@@ -1,0 +1,10 @@
+CodexAutoResume is an independent project and is not affiliated with or
+endorsed by OpenAI. Codex and ChatGPT are names of OpenAI products.
+
+Original project code, build scripts, application icon and documentation are
+provided under the MIT License. The small reference crops in assets are
+user-provided examples of the target application's UI for recognition tests;
+third-party names and UI artwork remain the property of their respective owners.
+
+The distributed executable embeds the MIT license (press F3 in the main window).
+Windows and .NET Framework system components are not redistributed by this project.
