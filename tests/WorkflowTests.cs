@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
@@ -24,7 +24,7 @@ namespace CodexAutoResume
             byte[] priorSettings = System.IO.File.Exists(settingsPath) ? System.IO.File.ReadAllBytes(settingsPath) : null;
             using (MainForm main = new MainForm())
             {
-                Field<UserPreferences>(main, "preferences").CheckUpdates = false;
+                Field<UserPreferences>(main, "preferences").CheckUpdates = false; UiText.SetLanguage("zh-CN");
                 main.Shown += async delegate
                 {
                     try
@@ -82,7 +82,7 @@ namespace CodexAutoResume
                             await Task.Delay(17000);
                             Require(Field<Label>(main, "status").Text == "等待操作" && Field<bool>(main, "monitoring"), "static voice state stays calm beyond previous five- and fifteen-second thresholds");
                             Require(Field<Timer>(main, "timer").Interval == 3000 && !Field<Timer>(main, "stabilityTimer").Enabled, "idle monitoring uses a three-second fallback without the temporary fast timer");
-                            Require(Field<TextBox>(main, "recentLog").Text != priorProgress && Field<TextBox>(main, "recentLog").Lines.Length <= 4, "timestamped home progress refreshes during static monitoring and stays bounded");
+                            Require(Field<TextBox>(main, "recentLog").Text != priorProgress && Field<TextBox>(main, "recentLog").Text.StartsWith(priorProgress), "timestamped home progress refreshes during static monitoring and retains earlier history");
                             Require(WindowCapture.PoolRefreshes == idlePoolRefresh, "static window does not trigger capture-pool rebuild");
                             Require(Field<MonitorActivity>(main, "activity").Reads > reads && Heartbeats(main) == beats && Field<TextBox>(main, "logBox").Text == quietLog, "quiet monitoring continues without UI heartbeat or repeated activity messages");
                             await Until(() => !Field<bool>(main, "updating"), 3);

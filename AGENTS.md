@@ -1,4 +1,4 @@
-# Repository instructions
+﻿# Repository instructions
 
 ## Discussion tracking and implementation authorization
 
@@ -14,3 +14,8 @@
 - Do not change `version-policy.json`, add an override, or bypass the version checks to approve a higher series yourself.
 - `VERSION`, executable metadata, source package, release notes and Git tag must agree. Use `tools/assert-version-policy.ps1` through the existing build/package/publish entry points.
 - The user approved retaining eight historical releases as 1.1.0–1.1.7 on 2026-10-25. Subsequent normal releases start at 1.1.8.
+
+## UI copy
+
+- Short Chinese UI labels and explanations that are not prose paragraphs omit a final Chinese full stop (。). Keep meaningful punctuation inside paragraphs.
+- Retain native system window chrome; bitmap preview nonclient rendering is not evidence that the actual system frame needs replacement.

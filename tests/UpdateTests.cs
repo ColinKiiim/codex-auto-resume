@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -56,8 +56,15 @@ namespace CodexAutoResume
                 RegionMemory restored = JsonFile.Read<ResumeMemory>(Path.Combine(directory, "memory.json")).Region;
                 check(restored.Badge == region.Badge && restored.SearchSize == region.SearchSize && restored.Explicit, "update state preserves explicit region coordinates");
                 check(Updates.Quote(original).StartsWith("\"") && Rejects(delegate { Updates.Quote("bad\"path"); }), "helper paths with spaces and apostrophes use argument quoting");
+                string legacySettings = Path.Combine(directory, "legacy-settings.json");
+                File.WriteAllText(legacySettings, "{\"CheckUpdates\":false,\"Background\":false,\"CropSize\":80}");
+                UserPreferences legacy = JsonFile.Read<UserPreferences>(legacySettings);
+                check(!legacy.Background && !legacy.CheckUpdates && legacy.CropSize == 80 && legacy.Language == "zh-CN", "legacy explicit settings survive new background and language defaults");
+                JsonFile.Write(legacySettings, new UserPreferences { Language = "en", Background = false });
+                UserPreferences english = JsonFile.Read<UserPreferences>(legacySettings);
+                check(english.Language == "en" && !english.Background, "language and explicit foreground preference round-trip");
                 UserPreferences preferences = new UserPreferences();
-                check(preferences.CheckUpdates && !preferences.Background, "update checks default on and background mode is not silently enabled");
+                check(preferences.CheckUpdates && preferences.Background && preferences.Language == "zh-CN", "update checks and background default on; initial language is Chinese");
             }
             finally { foreach (string file in Directory.GetFiles(directory)) File.Delete(file); Directory.Delete(directory); }
             DateTime now = DateTime.UtcNow;

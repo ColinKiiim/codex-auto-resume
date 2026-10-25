@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -35,13 +35,15 @@ namespace CodexAutoResume
         public bool Background { get; set; }
         public int CropSize { get; set; }
         public string SkippedVersion { get; set; }
-        public UserPreferences() { CheckUpdates = true; CropSize = 64; }
+        public string Language { get; set; }
+        public UserPreferences() { CheckUpdates = true; Background = true; CropSize = 64; Language = "zh-CN"; }
         internal static UserPreferences Load()
         {
             try
             {
                 UserPreferences value = JsonFile.Read<UserPreferences>(Path.Combine(Portable.DataDirectory, "settings.json"));
                 if (value == null) return new UserPreferences();
+                value.Language = value.Language == "en" ? "en" : "zh-CN";
                 value.CropSize = Math.Max(36, Math.Min(160, value.CropSize)); return value;
             }
             catch { return new UserPreferences(); }

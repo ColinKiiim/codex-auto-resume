@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -13,10 +13,10 @@ namespace CodexAutoResume
     {
         readonly UserPreferences preferences = UserPreferences.Load();
         readonly CancellationTokenSource lifetime = new CancellationTokenSource();
-        readonly Label targetName = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
+        readonly Label targetName = new Label { Name = "TargetName", Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
         readonly Label modeName = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray };
         readonly Label recoveryCount = new Label { AutoSize = true };
-        readonly TextBox recentLog = new TextBox { Name = "RecentLog", Multiline = true, ReadOnly = true, BorderStyle = BorderStyle.None, Dock = DockStyle.Fill, Margin = Padding.Empty, TabStop = false };
+        readonly ProgressHistory recentLog = new ProgressHistory { Name = "RecentLog", Multiline = true, ReadOnly = true, BorderStyle = BorderStyle.None, Dock = DockStyle.Fill, Margin = Padding.Empty, TabStop = true, ScrollBars = ScrollBars.Vertical, MaxLength = 0, HideSelection = false };
         readonly Queue<string> recentEvents = new Queue<string>();
         readonly MonitorPulse progressPulse = new MonitorPulse(DateTime.UtcNow);
         readonly System.Windows.Forms.Timer stabilityTimer = new System.Windows.Forms.Timer { Interval = 320 };
@@ -24,7 +24,7 @@ namespace CodexAutoResume
         readonly System.Windows.Forms.Timer frameTimer = new System.Windows.Forms.Timer { Interval = 100 };
         bool frameDirty;
         readonly LinkLabel regionAction = new LinkLabel { AutoSize = true, Text = "选择区域", Visible = false };
-        readonly Label previewCaption = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, Text = "等待识别", Margin = Padding.Empty };
+        readonly Label previewCaption = new Label { Dock = DockStyle.Fill, AutoEllipsis = false, TextAlign = ContentAlignment.MiddleLeft, Text = "等待识别", Margin = Padding.Empty };
         readonly Label previewTime = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty, ForeColor = Color.DimGray };
         TableLayoutPanel stateLayout;
         bool questionPreview;
@@ -75,7 +75,7 @@ namespace CodexAutoResume
             stateLayout.Controls.Add(previewCaption, 0, 2); stateLayout.Controls.Add(previewTime, 1, 2); stateLayout.SetColumnSpan(previewTime, 2); layout.Controls.Add(stateLayout, 0, 1);
 
             TableLayoutPanel connection = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Margin = Padding.Empty };
-            connection.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48)); connection.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); connection.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
+            connection.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72)); connection.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); connection.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
             connection.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); connection.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Label targetTitle = UiLabel("目标"), modeTitle = UiLabel("方式");
             targetTitle.Dock = modeTitle.Dock = DockStyle.Fill; targetTitle.Margin = modeTitle.Margin = Padding.Empty;
@@ -88,7 +88,7 @@ namespace CodexAutoResume
             TableLayoutPanel options = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = new Padding(0, 8, 0, 8) };
             options.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); options.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             automatic.Text = "自动恢复"; automatic.Margin = Padding.Empty; automatic.Dock = DockStyle.Fill; options.Controls.Add(automatic, 0, 0);
-            options.Controls.Add(new Label { Dock = DockStyle.Fill, Margin = Padding.Empty, ForeColor = Color.DimGray, Text = "检测到暂停时自动继续；关闭后仅观察。", TextAlign = ContentAlignment.MiddleLeft }, 0, 1); layout.Controls.Add(options, 0, 3);
+            options.Controls.Add(new Label { Dock = DockStyle.Fill, Margin = Padding.Empty, ForeColor = Color.DimGray, Text = "检测到暂停时自动继续；关闭后仅观察", TextAlign = ContentAlignment.MiddleLeft }, 0, 1); layout.Controls.Add(options, 0, 3);
             TableLayoutPanel history = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
             history.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); history.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
             history.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); history.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -112,26 +112,26 @@ namespace CodexAutoResume
         }
         void RecentProgress(string text)
         {
-            recentEvents.Enqueue(DateTime.Now.ToString("HH:mm:ss") + "  " + text);
-            while (recentEvents.Count > 4) recentEvents.Dequeue(); recentLog.Lines = recentEvents.ToArray();
+            string entry = DateTime.Now.ToString("HH:mm:ss") + "  " + text;
+            recentEvents.Enqueue(entry); recentLog.UpdateHistory(UiText.Get(entry), false);
         }
 
         void SetPreviewKind(bool question)
         {
-            if (questionPreview == question && previewCaption.Text == (question ? "问答区域" : "按钮局部")) return;
             questionPreview = question;
             // Scale relative to the existing action column, which WinForms scales
             // with DPI; do not reapply unscaled pixel constants after autoscaling.
             float scale = stateLayout.ColumnStyles[2].Width / 96f;
-            stateLayout.ColumnStyles[0].Width = (question ? 224 : 64) * scale;
+            UiText.Set(previewCaption, question ? "问答区域" : "采样图");
+            stateLayout.ColumnStyles[0].Width = Math.Max((question ? 224 : 64) * scale, TextRenderer.MeasureText(previewCaption.Text, previewCaption.Font).Width + 8 * scale);
             preview.Size = new Size((int)((question ? 208 : 48) * scale), (int)((question ? 72 : 48) * scale));
-            previewCaption.Text = question ? "问答区域" : "按钮局部";
+
         }
         void ResetPreview()
         {
             Image old = preview.Image; preview.Image = null; if (old != null) old.Dispose();
             lastObservedState = ButtonState.Unknown;
-            SetPreviewKind(false); previewCaption.Text = "等待识别"; previewTime.Text = "";
+            SetPreviewKind(false); UiText.Set(previewCaption, "采样图"); previewTime.Text = "";
         }
         void UpdateQuestionPreview(Bitmap image)
         {
@@ -143,26 +143,38 @@ namespace CodexAutoResume
         void ShowPreviewDetail()
         {
             if (preview.Image == null) return;
-            using (Form detail = new Form { Text = questionPreview ? "最近识别 · 问答区域" : "最近识别 · 按钮局部", Font = Font, ClientSize = questionPreview ? new Size(760, 440) : new Size(240, 240), StartPosition = FormStartPosition.CenterParent, Icon = Icon })
+            using (Form detail = new Form { Text = questionPreview ? "最近识别 · 问答区域" : "最近识别 · 采样图", Font = Font, ClientSize = questionPreview ? new Size(760, 440) : new Size(240, 240), StartPosition = FormStartPosition.CenterParent, Icon = Icon })
             using (Bitmap snapshot = new Bitmap(preview.Image))
             {
                 detail.Controls.Add(new PictureBox { Dock = DockStyle.Fill, Image = snapshot, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(35, 35, 35) });
-                detail.ShowDialog(this);
+                UiText.Apply(detail); detail.ShowDialog(this);
             }
         }
 
         void RefreshUi()
         {
             if (IsDisposed) return;
-            health.Text = diagnosing ? "● 自测中" : !monitoring ? "● 已暂停" : automatic.Checked ? "● 正在监测" : "● 正在监测 · 仅观察";
+            UiText.Set(health, diagnosing ? "● 自测中" : !monitoring ? "● 已暂停" : automatic.Checked ? "● 正在监测" : "● 正在监测 · 仅观察");
             health.ForeColor = diagnosing ? Color.SteelBlue : monitoring ? Color.FromArgb(36, 113, 83) : Color.DimGray;
-            toggle.Text = monitoring ? "暂停" : "继续监测"; toggle.Enabled = !diagnosing;
+            UiText.Set(toggle, monitoring ? "暂停" : "继续监测"); toggle.Enabled = !diagnosing;
             string title = target == null ? "正在寻找 Codex" : Native.Title(target.Window);
-            targetName.Text = String.IsNullOrWhiteSpace(title) ? "Codex" : title;
+            targetName.Text = target == null ? UiText.Get(title) : String.IsNullOrWhiteSpace(title) ? "Codex" : title;
             tips.SetToolTip(targetName, title);
-            modeName.Text = background.Checked ? "后台监测" : "前台监测";
-            recoveryCount.Text = "本次已恢复 " + gate.Verified + " 次";
-            previewTime.Text = preview.Image == null ? "" : !monitoring ? "已暂停 · 保留上次取样" : "最近取样 " + (activity.LastContent == DateTime.MinValue ? "" : activity.LastContent.ToLocalTime().ToString("HH:mm:ss"));
+            UiText.Set(modeName, background.Checked ? "后台监测" : "前台监测");
+            UiText.Set(recoveryCount, "本轮已恢复 " + gate.Verified + " 次");
+            UiText.Set(previewTime, preview.Image == null ? "" : !monitoring ? "已暂停 · 保留上次取样" : "最近取样 " + (activity.LastContent == DateTime.MinValue ? "" : activity.LastContent.ToLocalTime().ToString("HH:mm:ss")));
+        }
+
+        void RefreshLanguage()
+        {
+            if (IsDisposed) return;
+            preferences.Language = UiText.Language;
+            UiText.Apply(this); RefreshUi(); UiText.Set(status, statusSource);
+            SetPreviewKind(questionPreview);
+            recentLog.UpdateHistory(UiText.Get(String.Join(Environment.NewLine, recentEvents.ToArray())), true);
+            if (activityView != null && !activityView.IsDisposed) activityView.Text = UiText.Get(logBox.Text);
+            tips.SetToolTip(preview, UiText.English ? "Latest captured area; click to enlarge" : "最近识别的局部画面；点击放大查看");
+            SavePreferences();
         }
 
         void ChangeWindow()
@@ -186,7 +198,7 @@ namespace CodexAutoResume
             demo.Show(); demo.Activate(); Connect(Target.FromWindow(demo.Handle, true));
         }
         void OpenLogs()
-        { try { Directory.CreateDirectory(logDirectory); Process.Start(new ProcessStartInfo(logDirectory) { UseShellExecute = true }); } catch (Exception e) { MessageBox.Show(this, e.Message, "无法打开日志"); } }
+        { try { Directory.CreateDirectory(logDirectory); Process.Start(new ProcessStartInfo(logDirectory) { UseShellExecute = true }); } catch (Exception e) { UiDialog.Show(this, e.Message, "无法打开日志"); } }
         void SavePreferences()
         {
             preferences.Background = background.Checked; preferences.CropSize = (int)cropSize.Value;
@@ -196,8 +208,8 @@ namespace CodexAutoResume
         {
             if (activityWindow != null && !activityWindow.IsDisposed) { activityWindow.Activate(); return; }
             activityWindow = new Form { Text = "活动记录", Font = Font, ClientSize = new Size(620, 360), StartPosition = FormStartPosition.CenterParent, Icon = Icon };
-            activityView = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = logBox.Text };
-            activityWindow.Controls.Add(activityView); activityWindow.FormClosed += delegate { activityView = null; }; activityWindow.Show(this);
+            activityView = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = UiText.Get(logBox.Text) };
+            activityWindow.Controls.Add(activityView); activityWindow.FormClosed += delegate { activityView = null; }; UiText.Apply(activityWindow); activityWindow.Show(this);
         }
         void ShowSettings()
         {
@@ -206,13 +218,18 @@ namespace CodexAutoResume
             TabControl tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
             TabPage general = new TabPage("常规"), diagnostics = new TabPage("诊断工具"), about = new TabPage("帮助与更新"); tabs.TabPages.AddRange(new[] { general, diagnostics, about });
             FlowLayoutPanel common = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(16) };
-            background.Text = "后台监测（实验）"; common.Controls.Add(background);
-            common.Controls.Add(new Label { Text = "后台允许窗口被遮挡；Codex 需保持未最小化。\n前台模式需要 Codex 位于前台，按钮可见。", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 8, 0, 16) });
+            common.Controls.Add(UiLabel("语言"));
+            ComboBox language = new ComboBox { Name = "LanguageSelector", DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
+            language.Items.AddRange(new object[] { "简体中文", "English" }); language.SelectedIndex = UiText.English ? 1 : 0;
+            language.SelectedIndexChanged += delegate { UiText.SetLanguage(language.SelectedIndex == 1 ? "en" : "zh-CN"); };
+            common.Controls.Add(language);
+            UiText.Set(background, "后台监测"); common.Controls.Add(background);
+            common.Controls.Add(new Label { Text = "后台允许窗口被遮挡；Codex 需保持未最小化\n前台模式需要 Codex 位于前台，按钮可见", AutoSize = true, MaximumSize = new Size(510, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 8, 0, 16) });
             CheckBox checkUpdates = new CheckBox { Text = "自动检查更新", AutoSize = true, Checked = preferences.CheckUpdates };
             checkUpdates.CheckedChanged += delegate { preferences.CheckUpdates = checkUpdates.Checked; nextUpdateCheck = DateTime.UtcNow.AddSeconds(1); SavePreferences(); }; common.Controls.Add(checkUpdates);
             common.Controls.Add(UiLabel("高级定位"));
             common.Controls.Add(UiButton("选择按钮区域", delegate { RequestRegion(); }));
-            Label calibration = UiLabel("手动标定：将鼠标移到目标按钮中心，按 " + shortcut + "+F7。"); common.Controls.Add(calibration);
+            Label calibration = UiLabel("手动标定：将鼠标移到目标按钮中心，按 " + shortcut + "+F7"); common.Controls.Add(calibration);
             FlowLayoutPanel crop = new FlowLayoutPanel { AutoSize = true, Visible = target != null && !target.Automatic };
             crop.Controls.Add(UiLabel("手动区域大小（像素）")); crop.Controls.Add(cropSize); common.Controls.Add(crop);
             general.Controls.Add(common);
@@ -233,22 +250,22 @@ namespace CodexAutoResume
             {
                 if (tabs.SelectedTab != diagnostics) return;
                 if (preview.Image != null) { Image old = sample.Image; sample.Image = new Bitmap(preview.Image); if (old != null) old.Dispose(); }
-                values.Text = scores.Text;
-                statistics.Text = activity.Summary(DateTime.UtcNow, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + Environment.NewLine + "最近系统帧：" + activity.LastContent.ToString("O") + Environment.NewLine + "原生捕获忙：" + sampler.IsBusy + (journal.WriteFailed ? Environment.NewLine + "日志暂时无法写入" : "");
+                values.Text = UiText.Diagnostics(scores.Text);
+                statistics.Text = UiText.Diagnostics(activity.Summary(DateTime.UtcNow, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + Environment.NewLine + "最近系统帧：" + activity.LastContent.ToString("O") + Environment.NewLine + "原生捕获忙：" + sampler.IsBusy + (journal.WriteFailed ? Environment.NewLine + "日志暂时无法写入" : ""));
                 crop.Visible = target != null && !target.Automatic;
             }; refresh.Start();
             FlowLayoutPanel information = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(16) };
             information.Controls.Add(UiLabel("Codex Auto Resume " + Portable.Version)); information.Controls.Add(UiLabel("单文件便携版 · Windows x64 · MIT"));
             information.Controls.Add(UiButton("检查更新", async delegate { await CheckUpdatesAsync(true); }));
             information.Controls.Add(UiButton("使用说明", delegate { ShowHelp(); })); information.Controls.Add(UiButton("许可证", delegate { ShowLicense(); }));
-            information.Controls.Add(new Label { AutoSize = true, Text = "启动默认仅观察，开启自动恢复后才会点击。\n自动检查每 6 小时一次，没有更新时保持安静。", ForeColor = Color.DimGray, Margin = new Padding(0, 16, 0, 0) });
+            information.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(510, 0), Text = "启动默认仅观察，开启自动恢复后才会点击\n自动检查每 6 小时一次，没有更新时保持安静", ForeColor = Color.DimGray, Margin = new Padding(0, 16, 0, 0) });
             about.Controls.Add(information); settingsWindow.Controls.Add(tabs);
             settingsWindow.FormClosed += delegate
             {
                 refresh.Stop(); refresh.Dispose(); if (sample.Image != null) sample.Image.Dispose();
                 common.Controls.Remove(background); crop.Controls.Remove(cropSize); SavePreferences();
             };
-            settingsWindow.Show(this);
+            UiText.Apply(settingsWindow); settingsWindow.Show(this);
         }
 
         void OnCaptureFrame()
@@ -322,7 +339,7 @@ namespace CodexAutoResume
             {
                 AvailableUpdate update = await Updates.CheckAsync(lifetime.Token);
                 if (IsDisposed || lifetime.IsCancellationRequested) return;
-                if (update == null) { if (manual) MessageBox.Show(UpdateDialogOwner(), "当前已是最新正式版。", "检查更新"); return; }
+                if (update == null) { if (manual) UiDialog.Show(UpdateDialogOwner(), "当前已是最新正式版。", "检查更新"); return; }
                 if (!manual && (preferences.SkippedVersion == update.Version || announcedVersions.Contains(update.Version))) return;
                 announcedVersions.Add(update.Version);
                 using (Form prompt = new Form { Text = "发现新版本", Font = Font, ClientSize = new Size(500, 330), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Icon = Icon })
@@ -334,16 +351,16 @@ namespace CodexAutoResume
                     Button later = UiButton("稍后", delegate { prompt.DialogResult = DialogResult.Cancel; });
                     actions.Controls.Add(now); actions.Controls.Add(later); actions.Controls.Add(UiButton("跳过此版本", delegate { prompt.DialogResult = DialogResult.Ignore; }));
                     prompt.AcceptButton = now; prompt.CancelButton = later; prompt.Controls.Add(notes); prompt.Controls.Add(actions); prompt.Controls.Add(title);
-                    DialogResult result = prompt.ShowDialog(UpdateDialogOwner());
+                    UiText.Apply(prompt); DialogResult result = prompt.ShowDialog(UpdateDialogOwner());
                     if (result == DialogResult.Ignore) { preferences.SkippedVersion = update.Version; SavePreferences(); }
                     if (result == DialogResult.OK) await InstallUpdateAsync(update);
                 }
             }
-            catch (OperationCanceledException) { if (manual && !IsDisposed && !lifetime.IsCancellationRequested) MessageBox.Show(UpdateDialogOwner(), "检查更新超时，请稍后重试。", "检查更新"); }
+            catch (OperationCanceledException) { if (manual && !IsDisposed && !lifetime.IsCancellationRequested) UiDialog.Show(UpdateDialogOwner(), "检查更新超时，请稍后重试。", "检查更新"); }
             catch (Exception e)
             {
                 journal.Write("diagnostics.log", "update-check", e.GetType().Name + ": " + e.Message, DateTime.UtcNow);
-                if (manual && !IsDisposed) MessageBox.Show(UpdateDialogOwner(), "暂时无法检查更新，请稍后重试。\n" + e.Message, "检查更新");
+                if (manual && !IsDisposed) UiDialog.Show(UpdateDialogOwner(), "暂时无法检查更新，请稍后重试。\n" + e.Message, "检查更新");
             }
             finally { checkingUpdate = false; }
         }
@@ -367,19 +384,19 @@ namespace CodexAutoResume
                 Label message = new Label { Dock = DockStyle.Top, Height = 54, Padding = new Padding(14), Text = "正在下载并校验更新…" };
                 progress.Controls.Add(new ProgressBar { Dock = DockStyle.Top, Height = 20, Style = ProgressBarStyle.Marquee }); progress.Controls.Add(message);
                 Button cancelButton = UiButton("取消", delegate { cancel.Cancel(); }); cancelButton.Dock = DockStyle.Bottom; progress.Controls.Add(cancelButton);
-                progress.FormClosing += delegate { if (!finished) cancel.Cancel(); }; progress.Show(this);
+                progress.FormClosing += delegate { if (!finished) cancel.Cancel(); }; UiText.Apply(progress); progress.Show(this);
                 try
                 {
                     string candidate = await Updates.DownloadAsync(update, cancel.Token);
                     cancel.Token.ThrowIfCancellationRequested(); if (IsDisposed) return;
-                    message.Text = "正在准备替换并重启…"; SavePreferences();
+                    UiText.Set(message, "正在准备替换并重启…"); SavePreferences();
                     UpdateJob job = Updates.Prepare(candidate, update.Version, RememberForUpdate());
                     using (Process helper = Updates.StartHelper(job)) { if (helper == null) throw new IOException("更新助手未能启动"); }
                     finished = true; Stop("正在更新…"); progress.Close(); Close();
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception e)
-                { if (!IsDisposed) MessageBox.Show(progress, "更新未完成，当前版本保持可用。\n" + e.Message, "更新失败", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                { if (!IsDisposed) UiDialog.Show(progress, "更新未完成，当前版本保持可用。\n" + e.Message, "更新失败", MessageBoxButtons.OK, MessageBoxIcon.Information); }
                 finally { finished = true; progress.Close(); installingUpdate = false; RefreshUi(); }
             }
         }
@@ -407,7 +424,7 @@ namespace CodexAutoResume
                 {
                     automatic.Checked = false;
                     string failure = Path.Combine(job.Directory, "failure.txt");
-                    MessageBox.Show(this, "更新未完成，已保留或恢复原版本。\n" + (File.Exists(failure) ? File.ReadAllText(failure) : "请稍后重试。"), "更新结果");
+                    UiDialog.Show(this, "更新未完成，已保留或恢复原版本。\n" + (File.Exists(failure) ? File.ReadAllText(failure) : "请稍后重试。"), "更新结果");
                 }
             }
             catch (Exception e) { automatic.Checked = false; journal.Write("diagnostics.log", "update-startup", e.Message, DateTime.UtcNow); }

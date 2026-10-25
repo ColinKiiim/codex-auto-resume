@@ -1,4 +1,4 @@
-# CodexAutoResume — Auto-resume paused Codex desktop tasks
+﻿# CodexAutoResume — Auto-resume paused Codex desktop tasks
 
 [Download latest](https://github.com/ColinKiiim/codex-auto-resume/releases/latest) · [All releases](https://github.com/ColinKiiim/codex-auto-resume/releases) · [Report an issue](https://github.com/ColinKiiim/codex-auto-resume/issues/new/choose)
 
@@ -25,10 +25,10 @@ See the [at capacity / atcapacity FAQ](docs/troubleshooting.en.md) for troublesh
 1. Open this repository’s **Releases** and download the latest `CodexAutoResume-vVERSION-windows-x64.exe` attachment.
 2. Run the EXE and open Codex desktop. The utility discovers the target window and starts in observation mode.
 3. Check the detected icon, then enable **自动恢复** (Auto-resume). No hotkey or calibration is required.
-4. Optionally enable **后台监测** (Background monitoring) in Settings to work in another application while Codex is covered. Keep Codex unminimized.
+4. Background monitoring is enabled by default for new users. Codex can be covered while you work elsewhere; keep it unminimized. Change the mode and UI language in Settings.
 5. Click **暂停** (Pause) to pause monitoring, or close the utility to exit.
 
-**Requirements:** Windows 10 1903+ / Windows 11 x64 with system .NET Framework. The UI is currently in Chinese. Copy just the EXE to another computer; reference images, icon, and license are embedded. No Python, Node.js, API key, or downloaded recognition model is needed. Question-panel detection uses installed Windows OCR languages.
+**Requirements:** Windows 10 1903+ / Windows 11 x64 with system .NET Framework. Choose Chinese or English in Settings; your selection is saved. Copy just the EXE to another computer; reference images, icon, and license are embedded. No Python, Node.js, API key, or downloaded recognition model is needed. Question-panel detection uses installed Windows OCR languages.
 
 Source builds also create `release/CodexAutoResume.exe`. Download the executable attachment rather than the source ZIP if you only want to run the app.
 
@@ -47,7 +47,7 @@ Background mode uses Windows Graphics Capture and window messages without moving
 
 ## Monitoring and privacy
 
-The compact window shows monitoring status, a tightly cropped real preview, and four timestamped progress entries. A short progress entry is refreshed every ten seconds; repeated progress is not added to the full activity history. Activity history contains significant events; diagnostics record sampling and capture activity every 10 seconds, with rotation. Open logs from **设置 → 诊断工具** (Settings → Diagnostics), or visit `%LOCALAPPDATA%\CodexAutoResume\logs`.
+The compact window shows monitoring status, a tightly cropped real preview, and scrollable timestamped progress for the current session. New entries follow the bottom until you scroll back; reading older entries keeps your position. A short progress entry is refreshed every ten seconds; repeated progress is not added to the full activity history. Activity history contains significant events; diagnostics record sampling and capture activity every 10 seconds, with rotation. Open logs from **Settings → Diagnostics**, or visit `%LOCALAPPDATA%\CodexAutoResume\logs`.
 
 Updates are checked on startup and every six hours. A new stable release prompts for confirmation, then downloads, verifies, replaces, and restarts the EXE. Failed replacement or startup keeps or restores the old version. Update checks can be disabled in Settings. Existing versions without this feature need one manual upgrade.
 
@@ -79,7 +79,7 @@ Use this repository’s **Issues**. Include the utility version, Codex version, 
 
 The build uses the Windows .NET Framework compiler. See [development](docs/development.md), [contributing](CONTRIBUTING.md), and [release instructions](docs/releasing.md).
 
-Version 1.1.8 adds a compact interface, quiet static monitoring, and automatic updates. Recognition, update transaction, GUI workflow, occluded-background, and isolated single-EXE results are documented in the [validation record](docs/validation.md). Current version: [VERSION](VERSION). [Version notes](docs/releases/README.md).
+Version 1.1.10 adds Chinese/English switching, scrollable session progress and clearer sample captions to the compact interface, quiet static monitoring and automatic updates. Recognition, update transaction, GUI workflow, occluded-background, and isolated single-EXE results are documented in the [validation record](docs/validation.md). Current version: [VERSION](VERSION). [Version notes](docs/releases/README.md).
 
 Routine releases stay in **1.1.x** and increment the patch number. Moving to 1.2.x or a higher series requires explicit maintainer approval. Agents may suggest an upgrade but may not approve it themselves. See the [version policy](AGENTS.md).
 

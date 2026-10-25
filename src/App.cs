@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -21,7 +21,7 @@ namespace CodexAutoResume
             bool created;
             using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, "Local\\CodexAutoResume-v1", out created))
             {
-                if (!created) { MessageBox.Show("CodexAutoResume 已在运行，请使用现有窗口。", "CodexAutoResume"); return 0; }
+                if (!created) { UiText.Language = UserPreferences.Load().Language; MessageBox.Show(UiText.Get("CodexAutoResume 已在运行，请使用现有窗口。"), "CodexAutoResume"); return 0; }
                 Application.Run(new MainForm(args));
             }
             return 0;
@@ -50,7 +50,7 @@ namespace CodexAutoResume
         Target target;
         readonly Timer timer = new Timer();
         readonly CheckBox automatic = new CheckBox { Text = "允许自动点击（勾选即开始）", AutoSize = true };
-        readonly CheckBox background = new CheckBox { Text = "后台模式（实验）：允许完全遮挡，保持窗口未最小化", AutoSize = true };
+        readonly CheckBox background = new CheckBox { Text = "后台监测", AutoSize = true };
         readonly NumericUpDown cropSize = new NumericUpDown { Minimum = 36, Maximum = 160, Value = 64, Increment = 4, Width = 70 };
         readonly PictureBox preview = new PictureBox { Width = 128, Height = 128, BackColor = Color.FromArgb(35, 35, 35), SizeMode = PictureBoxSizeMode.Zoom };
         readonly Label status = new Label { AutoSize = false, Height = 54, Dock = DockStyle.Fill, Text = "自动查找 Codex；勾选允许自动点击即可开始。" };
@@ -66,6 +66,7 @@ namespace CodexAutoResume
         bool waitingForChoice;
         DateTime nextDiscovery;
         string lastStatus = "";
+        string statusSource = "正在寻找 Codex";
         string shortcut = "Ctrl+Alt";
         Rectangle lastBadge;
 
@@ -77,7 +78,9 @@ namespace CodexAutoResume
             Font = new Font("Microsoft YaHei UI", 10);
             StartPosition = FormStartPosition.CenterScreen;
             loadingOptions = true; background.Checked = preferences.Background; cropSize.Value = preferences.CropSize; loadingOptions = false;
-            InitializeCompactUi();
+            UiText.Language = preferences.Language;
+            InitializeCompactUi(); UiText.Apply(this); SetPreviewKind(false);
+            UiText.Changed += RefreshLanguage;
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } else if (e.KeyCode == Keys.F4) { ShowBackgroundSelfCheck(); e.Handled = true; } };
             automatic.CheckedChanged += delegate { if (!loadingOptions) ActivateOptions(automatic.Checked ? "自动恢复已开启" : "仅观察"); };
@@ -318,12 +321,12 @@ namespace CodexAutoResume
         void HealthTick()
         {
             DateTime now = DateTime.UtcNow;
-            string summary = activity.Summary(now, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + "；当前状态=" + status.Text;
+            string summary = activity.Summary(now, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + "；当前状态=" + statusSource;
             RefreshUi();
             if (monitoring && progressPulse.Due(now, TimeSpan.FromSeconds(10)))
             {
                 bool checkedRecently = activity.LastSample != DateTime.MinValue && (now - activity.LastSample).TotalSeconds < 8;
-                RecentProgress((target == null ? "" : updating ? "正在检查 · " : checkedRecently ? "已检查 · " : "等待检查 · ") + status.Text);
+                RecentProgress((target == null ? "" : updating ? "正在检查 · " : checkedRecently ? "已检查 · " : "等待检查 · ") + statusSource);
             }
             if (shownOnce && preferences.CheckUpdates && DateTime.UtcNow >= nextUpdateCheck) { Task updateCheck = CheckUpdatesAsync(false); }
             if (filePulse.Due(now, TimeSpan.FromSeconds(10)))
@@ -470,7 +473,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            MessageBox.Show(this, "Codex Auto Resume " + Portable.Version + "\n\n自动寻找 Codex，启动时仅观察。\n确认目标后打开“自动恢复”；暂停可停止监测。\n后台监测允许窗口被遮挡，但 Codex 不能最小化。\n需要你回答问题时，工具会等待，不会代答。\n多个按钮时持续扫描，可通过“选择区域”指定目标。\n\n设置中可查看诊断、演示、日志和更新。\n自动更新会先征求确认，再下载、校验、替换并重启。\n\n备用快捷键：" + shortcut + "+F8 连接窗口；\nF7 手动标定；F9 暂停/继续；F10 紧急停止。\nF2 本机自检；F4 后台自测。\n\n日志目录：" + logDirectory, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            UiDialog.Show(this, UiText.English ? "Codex Auto Resume " + Portable.Version + "\n\nFinds Codex automatically; starts in observation mode.\nEnable Auto-resume after confirming the target. Pause stops monitoring.\nBackground monitoring works while covered; keep Codex unminimized.\nQuestion panels wait for your answer and are never answered automatically.\nFor multiple buttons, use Select area to confirm the target.\n\nSettings contains diagnostics, demos, logs and updates.\nUpdates ask for confirmation, then download, verify, install and restart.\n\nFallback shortcuts: " + shortcut + "+F8 connects; F7 calibrates;\nF9 pauses/resumes; F10 stops immediately.\nF2 self-check; F4 background test.\n\nLogs: " + logDirectory : "Codex Auto Resume " + Portable.Version + "\n\n自动寻找 Codex，启动时仅观察。\n确认目标后打开“自动恢复”；暂停可停止监测。\n后台监测允许窗口被遮挡，但 Codex 不能最小化。\n需要你回答问题时，工具会等待，不会代答。\n多个按钮时持续扫描，可通过“选择区域”指定目标。\n\n设置中可查看诊断、演示、日志和更新。\n自动更新会先征求确认，再下载、校验、替换并重启。\n\n备用快捷键：" + shortcut + "+F8 连接窗口；\nF7 手动标定；F9 暂停/继续；F10 紧急停止。\nF2 本机自检；F4 后台自测。\n\n日志目录：" + logDirectory, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {
@@ -480,9 +483,9 @@ namespace CodexAutoResume
             {
                 string report = Portable.BuildReport();
                 SetStatus("本机自检通过：系统接口、窗口控件、内嵌图片和数据目录正常");
-                MessageBox.Show(this, "本机自检通过。\n此检查不会发送鼠标点击；自动恢复请用演示窗口验证。\n\n" + report, "本机自检", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                UiDialog.Show(this, "本机自检通过。\n此检查不会发送鼠标点击；自动恢复请用演示窗口验证。\n\n" + report, "本机自检", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception e) { SetStatus("本机自检失败：" + e.Message); MessageBox.Show(this, e.ToString(), "本机自检失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception e) { SetStatus("本机自检失败：" + e.Message); UiDialog.Show(this, e.ToString(), "本机自检失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
         async void ShowBackgroundSelfCheck()
         {
@@ -496,12 +499,12 @@ namespace CodexAutoResume
                 string report = await BackgroundDiagnostics.RunAsync(this, diagnosticCancellation.Token, sampler);
                 if (IsDisposed) return;
                 SetStatus("后台自测通过：完全遮挡下恢复一次，鼠标和前台窗口保持不变");
-                MessageBox.Show(this, report.Replace("PASS: fully occluded background diagnostic", "后台自测通过。"), "后台自测通过", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                UiDialog.Show(this, report.Replace("PASS: fully occluded background diagnostic", "后台自测通过。"), "后台自测通过", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (OperationCanceledException) { if (!IsDisposed) SetStatus("后台自测已取消；监控保持停止"); }
             catch (Exception e)
             {
-                if (!IsDisposed) { SetStatus("后台自测未通过：" + e.Message); MessageBox.Show(this, e.Message, "后台自测未通过", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+                if (!IsDisposed) { SetStatus("后台自测未通过：" + e.Message); UiDialog.Show(this, e.Message, "后台自测未通过", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             }
             finally { diagnosticCancellation.Dispose(); diagnosticCancellation = null; diagnosing = false; }
         }
@@ -512,14 +515,14 @@ namespace CodexAutoResume
                 TextBox document = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = DesktopIdentity.LicenseText().Replace("\r\n", "\n").Replace("\n", Environment.NewLine), Font = new Font("Consolas", 10) };
                 dialog.Controls.Add(document);
                 dialog.Shown += delegate { document.Focus(); document.Select(0, 0); };
-                dialog.ShowDialog(this);
+                UiText.Apply(dialog); dialog.ShowDialog(this);
             }
         }
         void SetStatus(string text)
         {
             string friendly = FriendlyStatus(text);
-            bool changed = status.Text != friendly;
-            status.Text = friendly;
+            bool changed = statusSource != friendly;
+            statusSource = friendly; UiText.Set(status, friendly);
             regionAction.Visible = text.Contains("多个候选") || text.Contains("原选区域") || text.Contains("候选区域需要用户确认");
             RefreshUi();
             if (text == lastStatus) return; lastStatus = text;
@@ -531,7 +534,7 @@ namespace CodexAutoResume
             string line = DateTime.Now.ToString("HH:mm:ss") + "  " + text + Environment.NewLine;
             if (logBox.TextLength > 24000) logBox.Clear(); logBox.AppendText(line);
             RecentProgress(text);
-            if (activityView != null && !activityView.IsDisposed) { activityView.Text = logBox.Text; activityView.SelectionStart = activityView.TextLength; activityView.ScrollToCaret(); }
+            if (activityView != null && !activityView.IsDisposed) { activityView.Text = UiText.Get(logBox.Text); activityView.SelectionStart = activityView.TextLength; activityView.ScrollToCaret(); }
             journal.Write("events.log", category, text, DateTime.UtcNow);
         }
         void SaveDiagnostic()
@@ -554,7 +557,7 @@ namespace CodexAutoResume
             stabilityTimer.Stop(); stabilityTimer.Dispose();
             questionTimer.Stop(); questionTimer.Dispose();
             frameTimer.Stop(); frameTimer.Dispose();
-            SavePreferences(); tips.Dispose();
+            UiText.Changed -= RefreshLanguage; SavePreferences(); tips.Dispose();
             WindowCapture.StopCapture();
             timer.Stop(); timer.Dispose();
             healthTimer.Stop(); healthTimer.Dispose();
@@ -590,15 +593,16 @@ namespace CodexAutoResume
             IconButton second = new IconButton { Location = new Point(150, 320), Size = new Size(64, 64), Visible = false, Anchor = AnchorStyles.Left | AnchorStyles.Bottom };
             CheckBox multiple = new CheckBox { Text = "双区域", AutoSize = true, ForeColor = Color.White };
             multiple.CheckedChanged += delegate { second.Visible = multiple.Checked; };
-            second.Click += delegate { clicks++; count.Text = "按钮收到的点击：" + clicks; second.State = "方块"; second.Invalidate(); };
+            second.Click += delegate { clicks++; UiText.Set(count, "按钮收到的点击：" + clicks); second.State = "方块"; second.Invalidate(); };
             choices.Controls.Add(multiple);
             Button move = new Button { Text = "换位置", AutoSize = true, ForeColor = Color.Black, BackColor = Color.WhiteSmoke };
             move.Click += delegate { icon.Left = icon.Left > ClientSize.Width / 2 ? ClientSize.Width / 2 - 80 : ClientSize.Width - 130; };
             choices.Controls.Add(move);
             Label guide = new Label { Dock = DockStyle.Top, Height = 90, Text = "演示已自动连接，无需快捷键。\n在主窗口勾选允许自动点击即可开始。\n后台模式可切到其他应用，完全盖住此窗口。\n三角形恢复后变为方块，计数只增加一次。" };
             icon.Location = new Point(630, 320); icon.Size = new Size(64, 64); icon.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
-            icon.Click += delegate { clicks++; count.Text = "按钮收到的点击：" + clicks; icon.State = "方块"; icon.Invalidate(); };
+            icon.Click += delegate { clicks++; UiText.Set(count, "按钮收到的点击：" + clicks); icon.State = "方块"; icon.Invalidate(); };
             Controls.Add(second); Controls.Add(icon); Controls.Add(count); Controls.Add(guide); Controls.Add(choices);
+            Shown += delegate { UiText.Apply(this); };
         }
     }
 

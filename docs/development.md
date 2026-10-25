@@ -1,4 +1,4 @@
-# 开发与验证
+﻿# 开发与验证
 
 [首页](../README.md) · [贡献指南](../CONTRIBUTING.md) · [发布流程](releasing.md)
 
@@ -53,3 +53,5 @@
 文档可以在开发分支随时修改；已有 Release 及其源码 ZIP 保留该版本快照。文档变更后，不要用相同版本号重新生成发布附件。GitHub 默认分支包含最新文档，Release 源码包对应发布时的内容。
 
 验证结果及实际覆盖范围见 [validation.md](validation.md)，捕获细节见 [background-mode.md](background-mode.md)。
+
+1.1.10 的 `-UiTests` 覆盖中英即时切换、偏好保存、采样标签宽度以及本轮进度的滚轮/底部跟随/翻阅视口保持。客户端预览输出在临时目录 `CodexAutoResume-ui-zh-CN-100.png`、`CodexAutoResume-ui-en-100.png` 等文件中；不使用 DrawToBitmap 模拟的非客户区评判系统边框。

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -55,7 +55,7 @@ namespace CodexAutoResume
                 {
                     Label guide = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter,
                         Text = "正在完全遮挡自测窗口，并验证后台恢复。\n通常只需几秒；请暂勿操作鼠标或切换窗口。\n\n关闭此窗口可取消自测。", Font = new Font("Microsoft YaHei UI", 11) };
-                    cover.Controls.Add(guide);
+                    cover.Controls.Add(guide); UiText.Apply(cover); UiText.Apply(fixture);
                     cover.FormClosing += delegate(object sender, FormClosingEventArgs e) { if (e.CloseReason == CloseReason.UserClosing) linked.Cancel(); };
                     fixture.FormClosing += delegate(object sender, FormClosingEventArgs e) { if (e.CloseReason == CloseReason.UserClosing) linked.Cancel(); };
                     if (owner == null) fixture.Show(); else fixture.Show(owner);

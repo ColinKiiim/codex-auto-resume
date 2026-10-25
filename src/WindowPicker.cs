@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -10,6 +10,7 @@ namespace CodexAutoResume
         public int SelectedIndex = -1;
         public WindowPicker(List<Target> windows)
         {
+            Shown += delegate { UiText.Apply(this); };
             Text = "请选择要监测的 Codex 窗口"; Icon = DesktopIdentity.LoadIcon(); ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei UI", 10); ClientSize = new Size(640, 330); StartPosition = FormStartPosition.CenterParent;
             Label guide = new Label { Dock = DockStyle.Top, Height = 65, Padding = new Padding(12), Text = "检测到多个窗口，请选择一个。确认前不会点击；之后可用主窗口的“选择窗口”更换。" };
@@ -17,7 +18,7 @@ namespace CodexAutoResume
             for (int i = 0; i < windows.Count; i++)
             {
                 Screen screen = Screen.FromHandle(windows[i].Window);
-                list.Items.Add("窗口 " + (i + 1) + "  ·  " + Native.Title(windows[i].Window) + "  ·  " + (screen.Primary ? "主屏" : "副屏"));
+                list.Items.Add((UiText.English ? "Window " : "窗口 ") + (i + 1) + "  ·  " + Native.Title(windows[i].Window) + "  ·  " + (UiText.English ? (screen.Primary ? "Primary display" : "Secondary display") : (screen.Primary ? "主屏" : "副屏")));
             }
             list.SelectedIndex = -1;
             FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 55, Padding = new Padding(8), FlowDirection = FlowDirection.RightToLeft };
