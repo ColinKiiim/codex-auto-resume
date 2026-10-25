@@ -1,55 +1,59 @@
-# 1.4.0 后台模式（实验）
+# 1.5.0 后台模式与问答状态
 
-1.4.0 增加内置后台自测（主窗口 F4）：只操作工具自己的测试按钮，用不透明窗口完全遮挡，按四个稳定三角形新帧、独立点击前复查、一次后台点击、三个方块新帧的顺序验证。检查鼠标和前台窗口不变。关闭遮挡窗口或 F10 组合键可取消；原监控停止，自测完成后不自动重启。自测与主监控共用捕获任务隔离，超时后不会通过重开自测堆积工作线程。
+本机验证：2026-10-25，Windows 11 x64。MIT，单文件分发。1.5.0 修复旧版在 8 秒未确认方块后停止的问题，改为持续监测和限速重试；自动点击与后台选项无需快捷键启动。
 
-已在中文/空格/单引号目录、EXE 改名及只读、空 PATH、Windows 工作目录的隔离环境运行 `--background-self-check`，只携带一个 EXE，完整遮挡点击自测通过。GUI 按钮入口也已实测通过。此测试不会点击真实 Codex，不能作为真实 Codex 暂停恢复已验证的证据。
+## 捕获与连续监测
 
-自测结束或取消时显式关闭两个测试窗口，再释放控件，避免反复自测后在窗体集合中保留已释放记录。测试覆盖预先取消、进行中取消、取消后再成功运行，以及窗口集合恢复到原数量。
+对同一目标保留 Windows Graphics Capture 会话、帧池和 D3D11 设备。FrameArrived 持续排出旧队列，只保留一个待处理帧，避免两帧缓冲塞满后看到较早画面。窗口大小变化时重建帧池；系统异常、窗口关闭或无法恢复取样时释放并等待重新连接。重复读取不会每 400ms 重开会话，从而减少黄色系统边框的启动闪烁。
 
-1.3.1 增加整次捕获 3 秒截止时间，覆盖显卡调用和会话释放阶段可能卡住的情况。超时后停止监控；未完成任务结束前拒绝新的捕获，迟到画面立即释放且不能用于点击。新增 10 项正常、超时、异常、迟到结果丢弃及恢复采样检查，总计 458 项回归检查通过。
+静态目标不一定不断产生脏帧。有效会话可返回最近一次像素画面，同时分别保留原始内容时间 ContentAt / ContentSequence 与本次读取时间 CapturedAt / Sequence。读取时间不是像素刚刚渲染的证明。位置、进程身份、窗口可见性与最小化状态每次重新校验；过期的读取结果和旧坐标不用于点击。目标自己冻结绘制时，系统可能无法提供更新内容，这是实验功能的限制。
 
-本机验证日期：2026-10-24，Windows 11 x64。此版本继续采用 MIT，分发只需要 release/CodexAutoResume.exe。
+每次采样有 3 秒外部截止时间。超时后继续监测，已有原生任务未完成前拒绝排入更多工作；迟到结果释放且不能点击。不是因超时而停止整项监测。隐藏或最小化时不点击，等待恢复；用户按停止/关闭才结束日常监测。主动运行自检会暂停日常监测，完成后手动点开始观察。
 
-## 实现
+黄色边框属于系统捕获指示。关闭它需要系统支持以及相应权限/能力；本程序保留系统默认行为，不绕过权限、不保证无边框。参考 [IsBorderRequired](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.isborderrequired?view=winrt-26100) 和 [RequestAccessAsync](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscaptureaccess.requestaccessasync?view=winrt-26100)。
 
-Windows Graphics Capture 的 HWND 捕获经由系统 WinRT 投影、原生 D3D11 与 DXGI 完成，不引用 NuGet 或第三方 DLL。编译使用本机系统 WinMetadata，运行时使用目标电脑的 Windows 接口。通过 CreateFreeThreaded 建立新捕获请求；只接受请求开始后时间戳的新帧。捕获在工作线程执行，单次等待新帧上限 2 秒，主窗口和停止快捷键保持响应。黄色系统捕获边框保留。D3D 设备在进程内复用并串行访问；逐帧释放 WinRT 帧、表面、会话及池，设备异常后重建。
+## 点击与确认
 
-每帧重新扫描目标窗口下方区域，坐标由捕获边界换算到屏幕及目标子窗口客户区。多候选仍使用同一人工选择规则。手动模式保留窗口内相对位置；改变尺寸或 DPI 后须重新标定。
+四次连续稳定三角形取样后准备点击，点击前再取样核对图形、区域、坐标、窗口/进程、用户开关与当前监测代次。对话框、停止、连接或模式变化使旧异步结果失效。
 
-点击前再发起一次独立捕获，核对三角形、位置、窗口/进程身份、有效时间与用户开关。目标原生按钮使用 BM_CLICK，其他绘制控件使用 WM_MOUSEMOVE/WM_LBUTTONDOWN/WM_LBUTTONUP。不调用后台 SendInput、不移动鼠标、不主动激活窗口、不注入目标进程、不修改 Codex 文件。消息成功只记一次尝试；连续 3 帧新方块才计为恢复成功，8 秒未确认停止。
+目标原生按钮使用 BM_CLICK，其他绘制控件使用目标子窗口的 WM_MOUSEMOVE / WM_LBUTTONDOWN / WM_LBUTTONUP。不调用后台 SendInput、不移动系统鼠标、不主动激活目标、不注入或修改 Codex。消息成功只记尝试；严格方块才记恢复确认，较晚出现的方块也可确认且只计一次。
 
-关闭、切换模式、重新连接、取消自动点击均使未完成的异步捕获失效，完成后的旧结果不会触发点击。最小化或隐藏窗口不处理。
+点击至少间隔 5 秒。5 秒未确认后继续观察；重新确认稳定三角形时可再次尝试。方块、发送、语音、未知与问答均不会被点击。窗口移动后重新定位，多候选仍须人工确认，原选区域消失不会静默切到另一项。手动标定仍可备用，改变尺寸或 DPI 后须重标。
 
-## 真实验证
+## 等待用户回答
+
+QuestionDetector 通过 Windows 自带离线 OCR 识别窗口右下区域。使用询问/等待状态文字、分页与底部动作等组合信号，兼容跳过按钮和填写文字后的提交按钮。普通消息里单独出现“等待你的回答”、一个“提交”或推荐选项不足以判定。
+
+识别后显示“等待用户回答”，相同状态只记录一次，约每 2 秒检查是否结束，期间不反复搜索暂停按钮。不选择选项、不跳过、不提交，也不保存问题文本。面板消失后自动恢复正常图标检测。
+
+OCR 仅依赖系统已安装语言，未下载模型或增加分发 DLL。[Windows OcrEngine](https://learn.microsoft.com/en-us/uwp/api/windows.media.ocr.ocrengine?view=winrt-26100) 不可用、语言缺失或超时会降级到持续图标监测；只有一个 OCR 工作任务，超时后不堆积后续任务。本机自检报告包含 OCR 语言支持情况。
+
+## 本版验证
 
 | 场景 | 结果 |
 |---|---|
-| 448 项现有识别、选择、状态机、便携与任务栏回归 | 通过 |
-| 不透明窗口完全盖住演示窗口 | 屏幕截图只有遮挡层；WGC 识别到下面的三角形 |
-| 演示原生按钮后台点击 | 计数 0→1，变为方块；鼠标、前台窗口不变 |
-| 独立 Chrome/Chromium HTML 测试页完全遮挡 | WM 消息触发 DOM click handler，三角形→方块；鼠标、前台窗口不变 |
-| 真实 Codex 完全遮挡、保持运行状态 | 连续 3 个新帧识别到 Running；帧年龄约 46–53ms；前台窗口不变 |
-| 真实 Codex 暂停→恢复 | 未验证，当前没有可用于测试的暂停场景 |
-| 主程序界面及异步监控链路 | 切到工具后仍恢复演示按钮，已点击 1、已确认恢复 1 |
-| 过期帧、窗口移动、取消校验、最小化、隐藏 | 均拒绝定位或点击 |
-| 后台多候选、取消、确认后的新帧、已选区域消失 | 均保持人工选择规则，不擅自切换 |
-| 后台手动标定、移动、调整大小 | 标定映射正确，移动后跟随，尺寸变化要求重标定 |
-| 连续捕获资源检查 | 预热后两组各 30 次捕获，进程句柄 593→593→593 |
-| 单个 EXE 隔离目录、中文/空格/单引号路径、改名、只读、无 PATH | 通过 |
-| 第二台实体电脑 | 尚未测试 |
+| 471 项识别/状态机/选择/捕获任务隔离/任务栏与便携回归 | 通过，0 失败 |
+| 完全遮挡的演示按钮 | 后台恢复一次、方块确认；鼠标和前台窗口不变 |
+| 多候选、取消、显式选择、已选区域消失 | 确认前不点击，不静默切换 |
+| 手动备用、窗口移动及尺寸变化 | 移动跟随；尺寸变化要求重标 |
+| 持续会话及句柄 | 同窗口多次读取不重开会话；预热后两组 30 次读取句柄稳定 |
+| 主 GUI 无快捷键操作 | 勾选选项即开启，保留目标连接 |
+| 主 GUI 未知状态超过 9 秒 | 不停止、不点击；随后三角形自动恢复 |
+| 主 GUI 提交问答面板 | 记录一次、不点击；面板消失后继续恢复三角形 |
+| 用户的两张真实问答截图 | 跳过、填写后提交均识别 |
+| 合成问答面板与消失 | 两种状态及退出恢复通过 |
+| 自测预取消/进行中取消/取消后重跑 | 清理测试窗口并可重跑 |
+| 真实 Codex 完全遮挡只读探测 | 三次捕获到 Running；无目标点击；前台不变 |
+| 真实 Codex 后台恢复 | 用户旧版截图显示已确认 4 次，第 5 次因旧 8 秒规则停止；非本版完整兼容性保证 |
+| 第二台实体电脑 | 未测试 |
 
-测试中普通 WinForms 自绘 Control 忽略了后台鼠标消息；UI Automation Invoke 则改变了焦点。这说明仅凭消息成功不能判断兼容性。演示控件现为具有真实按钮语义的 Button，通过 BM_CLICK 路径验证；Chromium 测试另行覆盖鼠标消息路径，没有用演示结果代替真实 Codex 验证。
+Chromium 的 WM 输入路线另用隔离临时配置的自有 HTML 页面验证，三角形→方块、DOM 点击标记、鼠标/前台不变。本次普通启动的新 Chromium 在被 Codex 盖住时没有绘制页面，捕获灰色；给测试实例加 `--disable-backgrounding-occluded-windows` 后通过。因此此检查覆盖输入路线和持续捕获，不能据此保证默认设置的所有 Chromium 应用都可后台绘制。工具没有给 Codex 添加启动参数、改变安装文件或调整用户浏览器配置。此测试开关用途见 [Chromium 官方开关源码](https://chromium.googlesource.com/chromium/src/+/HEAD/content/public/common/content_switches.cc) 和 [Chrome 团队自动化开关说明](https://github.com/GoogleChrome/chrome-launcher/blob/main/docs/chrome-flags-for-tools.md)。
 
-## 使用范围
+锁屏、睡眠、远程桌面断开、HDR、混合 DPI、多显卡与不同权限等级尚未系统性覆盖。部分目标拒绝后台消息或停止绘制时会持续等待，不能保证所有客户端版本可用。
 
-支持被其他窗口完全遮挡，但必须保持目标未最小化、未隐藏。部分应用在遮挡时会停止绘制，部分拒绝后台消息；这种情况会等待或停止，不能保证所有客户端版本都能恢复。权限等级不同可能被 Windows UIPI 拒绝。保持工具和 Codex 以相同普通用户权限运行。
+## 参考
 
-为避免复用旧画面，每轮新建捕获请求，成本高于持续录屏；当前以每 400ms 尝试一轮。不要据此视为已完成长时间性能或所有显卡验证。锁屏、远程桌面断开、睡眠、最小化、HDR、多显卡/混合 DPI 组合尚未完成系统性验证。
-
-## 研究来源
-
-- [Win32CaptureSample](https://github.com/robmikh/Win32CaptureSample)：HWND 捕获、CreateFreeThreaded、快照流程；参考架构，未复制其代码或二进制。
-- [OBS Window Capture](https://obsproject.com/kb/window-capture-sources) 与 [winrt-capture.cpp](https://github.com/obsproject/obs-studio/blob/master/libobs-winrt/winrt-capture.cpp)：被其他窗口遮挡时的窗口捕获方案；未引入 OBS GPL 代码。
-- [AutoHotkey ControlClick 文档](https://github.com/AutoHotkey/AutoHotkeyDocs/blob/v1/docs/lib/ControlClick.htm)：面向窗口/控件的后台消息路线和兼容限制；未复制其源码。
-- [WGC 遮挡绘制问题 #103](https://github.com/robmikh/Win32CaptureSample/issues/103)：应用自身的遮挡优化可能影响帧更新。
-- [PostMessage](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postmessagew)：消息投递及 UIPI 限制。
+- [Win32CaptureSample](https://github.com/robmikh/Win32CaptureSample)：HWND / WinRT / D3D 架构参考，未复制其代码或二进制。
+- [OBS window capture](https://obsproject.com/kb/window-capture-sources)：窗口捕获方案参考，未引入 GPL 代码。
+- [WGC 遮挡绘制问题](https://github.com/robmikh/Win32CaptureSample/issues/103)：目标自身绘制优化的限制。
+- [PostMessage](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postmessagew)：消息投递与权限限制。

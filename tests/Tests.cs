@@ -15,6 +15,14 @@ namespace CodexAutoResume
         [STAThread] public static int Main(string[] args)
         {
             DesktopIdentity.Initialize();
+            Check(QuestionDetector.Matches("正在询问 问题\n正在等待你的回答", ""), "active question status without action OCR");
+            Check(QuestionDetector.Matches("1 of 3", "跳过"), "question pager with skip");
+            Check(QuestionDetector.Matches("3 of 3", "提交"), "question pager with typed submit");
+            Check(QuestionDetector.Matches("Waiting for your answer", "Submit"), "English waiting panel");
+            Check(!QuestionDetector.Matches("普通消息中提到等待你的回答", ""), "quoted waiting text alone is insufficient");
+            Check(!QuestionDetector.Matches("1 of 3", ""), "pager alone is insufficient");
+            Check(!QuestionDetector.Matches("一般输入框", "提交"), "submit alone is insufficient");
+            Check(!QuestionDetector.Matches("新增群组（推荐）", "跳过"), "recommended choice alone is insufficient");
             Check(DesktopIdentity.CurrentId() == DesktopIdentity.AppId, "explicit standalone taskbar identity");
             Check(DesktopIdentity.AppId.IndexOf("OpenAI", StringComparison.OrdinalIgnoreCase) < 0, "own identity distinct from host application");
             using (Icon icon = DesktopIdentity.LoadIcon()) Check(icon.Width == 32 && icon.Height == 32, "embedded taskbar icon");
@@ -205,7 +213,20 @@ namespace CodexAutoResume
             for (int i = 0; i < 4; i++) Check(!gate.Observe(ButtonState.Resume, t.AddSeconds(7.6 + i * .4)), "cooldown " + i);
             Check(gate.Observe(ButtonState.Resume, t.AddSeconds(13)), "new pause ready after cooldown");
             gate.MarkAttempt(t.AddSeconds(13)); gate.Observe(ButtonState.Unknown, t.AddSeconds(21));
-            Check(gate.Failed && gate.Attempts == 2 && !gate.Observe(ButtonState.Resume, t.AddSeconds(22)), "timeout latches failure");
+            Check(!gate.AwaitingRunning && gate.Attempts == 2 && !gate.Observe(ButtonState.Resume, t.AddSeconds(22)), "missed confirmation keeps monitoring without latching failure");
+            for (int i = 0; i < 3; i++) gate.Observe(ButtonState.Resume, t.AddSeconds(22.4 + i * .4));
+            Check(gate.Observe(ButtonState.Resume, t.AddSeconds(24)), "stable triangle retries after interval without manual rebind");
+            gate.MarkAttempt(t.AddSeconds(24));
+            gate.Observe(ButtonState.Running, t.AddSeconds(24.1));
+            Check(gate.Verified == 2 && !gate.AwaitingRunning, "brief valid square confirms recovery immediately");
+            for (int i = 0; i < 100; i++) gate.Observe(ButtonState.Unknown, t.AddSeconds(40 + i));
+            for (int i = 0; i < 4; i++) gate.Observe(ButtonState.Resume, t.AddSeconds(150 + i));
+            Check(gate.Observe(ButtonState.Resume, t.AddSeconds(155)), "long unknown period never requires restarting monitor");
+            gate.MarkAttempt(t.AddSeconds(155)); gate.Observe(ButtonState.Unknown, t.AddSeconds(170));
+            gate.Observe(ButtonState.Running, t.AddSeconds(171));
+            Check(gate.Verified == 3 && !gate.AwaitingRunning, "late square still verifies recovery after confirmation wait interval");
+            gate.Observe(ButtonState.Running, t.AddSeconds(172));
+            Check(gate.Verified == 3, "same late square is counted only once");
             gate = new ResumeGate();
             gate.Observe(ButtonState.Resume, t); gate.Observe(ButtonState.Resume, t); gate.BreakStreak();
             Check(!gate.Observe(ButtonState.Resume, t), "occlusion breaks stability streak");

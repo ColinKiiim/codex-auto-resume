@@ -18,6 +18,19 @@ namespace CodexAutoResume
             while (!task.IsCompleted) Pump(10);
             return task.GetAwaiter().GetResult();
         }
+        static WindowFrame WaitFor(IntPtr window, Func<WindowFrame, bool> predicate)
+        {
+            DateTime end = DateTime.UtcNow.AddSeconds(5);
+            do
+            {
+                WindowFrame frame = null;
+                try { frame = Capture(window); if (predicate(frame)) return frame; }
+                catch (TimeoutException) { }
+                if (frame != null) frame.Dispose();
+                Pump(80);
+            } while (DateTime.UtcNow < end);
+            throw new Exception("Expected fixture pixels did not arrive within 5 seconds");
+        }
         [STAThread] public static int Main()
         {
             Native.SetDpi(); DesktopIdentity.Initialize(); Application.EnableVisualStyles();
@@ -88,7 +101,7 @@ namespace CodexAutoResume
                     cover.Bounds = Rectangle.Inflate(demo.Bounds, 25, 25);
                     CheckBox multiple = demo.Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<CheckBox>().Single();
                     multiple.Checked = true; Pump(100);
-                    using (WindowFrame frame = Capture(demo.Handle))
+                    using (WindowFrame frame = WaitFor(demo.Handle, f => recognizer.FindButtons(f.Image).Count == 2))
                     {
                         Require(!target.LocateBackground(frame, recognizer, null, out crop, out why) && why == "候选区域需要用户确认", "background multiple candidates cannot auto-select");
                         int offered = 0;
@@ -136,10 +149,11 @@ namespace CodexAutoResume
                     using (WindowFrame frame = Capture(demo.Handle))
                     { calibrated.Offset(20, 0); Require(manual.LocateBackground(frame, recognizer, null, out crop, out why) && crop == calibrated, "manual background coordinates follow window movement"); }
                     demo.Width += 24; cover.Bounds = Rectangle.Inflate(demo.Bounds, 25, 25); Pump(100);
-                    using (WindowFrame frame = Capture(demo.Handle))
+                    using (WindowFrame frame = WaitFor(demo.Handle, f => f.Bounds.Size == WindowCapture.Bounds(demo.Handle).Size))
                         Require(!manual.LocateBackground(frame, recognizer, null, out crop, out why) && why == "窗口大小或缩放已变化，请重新标定", "manual background calibration rejects resized window");
                     // A repeated-capture resource check detects retained WinRT/D3D handles.
                     for (int i = 0; i < 5; i++) using (WindowFrame frame = Capture(demo.Handle)) { }
+                    long starts = WindowCapture.SessionStarts;
                     process.Refresh(); int handles = process.HandleCount;
                     for (int i = 0; i < 30; i++) using (WindowFrame frame = Capture(demo.Handle)) { }
                     process.Refresh(); Console.WriteLine("Capture stress handles: " + handles + " -> " + process.HandleCount);
@@ -148,6 +162,7 @@ namespace CodexAutoResume
                     for (int i = 0; i < 30; i++) using (WindowFrame frame = Capture(demo.Handle)) { }
                     Pump(500); process.Refresh(); Console.WriteLine("Second capture stress handles: " + handles + " -> " + process.HandleCount);
                     Require(process.HandleCount - handles < 30, "capture handles stabilize after warmup");
+                    Require(WindowCapture.SessionStarts == starts, "same window reuses persistent session without border restart on each read");
                     int forms = Application.OpenForms.Count;
                     using (CancellationTokenSource cancelled = new CancellationTokenSource())
                     {

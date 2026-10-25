@@ -269,29 +269,28 @@ namespace CodexAutoResume
         }
     }
 
-    // Pure state machine: one attempt per pause, rearmed only by a stable square.
+    // Continuous monitoring: rate-limit retries, never latch a capture timeout.
     public sealed class ResumeGate
     {
         int resumeFrames, runningFrames;
+        bool pendingVerification;
         public bool AwaitingRunning { get; private set; }
-        public bool Failed { get; private set; }
         public int Attempts { get; private set; }
         public int Verified { get; private set; }
         DateTime attemptedAt, lastVerified = DateTime.MinValue;
         public bool Observe(ButtonState state, DateTime now)
         {
-            if (Failed) return false;
             if (state == ButtonState.Running) { runningFrames++; resumeFrames = 0; }
             else { runningFrames = 0; resumeFrames = state == ButtonState.Resume ? resumeFrames + 1 : 0; }
-            if (AwaitingRunning && runningFrames >= 3)
-            { AwaitingRunning = false; Verified++; lastVerified = now; }
-            if (AwaitingRunning && (now - attemptedAt).TotalSeconds >= 8) Failed = true;
-            return !Failed && !AwaitingRunning && resumeFrames >= 4 && (now - lastVerified).TotalSeconds >= 5;
+            if (pendingVerification && runningFrames >= 1)
+            { AwaitingRunning = false; pendingVerification = false; Verified++; lastVerified = now; }
+            if (AwaitingRunning && (now - attemptedAt).TotalSeconds >= 5) AwaitingRunning = false;
+            return !AwaitingRunning && resumeFrames >= 4 && (now - attemptedAt).TotalSeconds >= 5 && (now - lastVerified).TotalSeconds >= 5;
         }
         public void MarkAttempt(DateTime now)
         {
-            if (AwaitingRunning || Failed) throw new InvalidOperationException("Attempt already latched");
-            AwaitingRunning = true; attemptedAt = now; resumeFrames = 0; runningFrames = 0; Attempts++;
+            if (AwaitingRunning) throw new InvalidOperationException("Attempt already latched");
+            AwaitingRunning = true; pendingVerification = true; attemptedAt = now; resumeFrames = 0; runningFrames = 0; Attempts++;
         }
         public void BreakStreak() { resumeFrames = 0; runningFrames = 0; }
     }

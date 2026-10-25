@@ -1,4 +1,4 @@
-param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests)
+param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -10,7 +10,9 @@ $sources = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.
 $commonArgs = @('/nologo', '/optimize+', '/platform:x64', '/utf8output', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', ('/win32manifest:' + (Join-Path $projectRoot 'app.manifest')))
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Graphics.winmd')
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Foundation.winmd')
+foreach ($metadata in @('Windows.Media', 'Windows.Storage', 'Windows.Globalization')) { $commonArgs += '/reference:' + (Join-Path $env:WINDIR ('System32\WinMetadata\' + $metadata + '.winmd')) }
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll')
+$commonArgs += '/reference:' + (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Runtime.InteropServices.WindowsRuntime.dll')
 $runtimeFacade = Get-ChildItem -LiteralPath (Join-Path $env:WINDIR 'Microsoft.NET\assembly\GAC_MSIL\System.Runtime') -Filter System.Runtime.dll -Recurse | Select-Object -First 1
 $commonArgs += '/reference:' + $runtimeFacade.FullName
 foreach ($sampleName in @('resume', 'running', 'send', 'send-current', 'voice')) {
@@ -28,6 +30,20 @@ if (Test-Path -LiteralPath $testSource) {
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & (Join-Path $distPath 'CodexAutoResume.Tests.exe') $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+}
+if ($WorkflowTests) {
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.WorkflowTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.WorkflowTests.exe')) @sources (Join-Path $projectRoot 'tests\WorkflowTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Workflow test compilation failed.' }
+    & (Join-Path $distPath 'CodexAutoResume.WorkflowTests.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Workflow tests failed.' }
+    return
+}
+if ($QuestionTests) {
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.QuestionTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.QuestionTests.exe')) @sources (Join-Path $projectRoot 'tests\QuestionTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Question test compilation failed.' }
+    & (Join-Path $distPath 'CodexAutoResume.QuestionTests.exe') @QuestionImages
+    if ($LASTEXITCODE -ne 0) { throw 'Question tests failed.' }
+    return
 }
 if ($ChromiumTests) {
     & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.ChromiumTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.ChromiumTests.exe')) @sources (Join-Path $projectRoot 'tests\ChromiumTests.cs')

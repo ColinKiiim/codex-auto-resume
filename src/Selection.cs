@@ -70,7 +70,7 @@ namespace CodexAutoResume
             PictureBox context = new PictureBox { Dock = DockStyle.Top, Height = 230, SizeMode = PictureBoxSizeMode.Zoom, Image = overview, BackColor = Color.FromArgb(24, 24, 24) };
             FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 54, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
             Button confirm = new Button { Text = "使用所选区域", Enabled = false, AutoSize = true };
-            Button cancel = new Button { Text = "取消并停止", AutoSize = true, DialogResult = DialogResult.Cancel };
+            Button cancel = new Button { Text = "暂不选择", AutoSize = true, DialogResult = DialogResult.Cancel };
             list.SelectedIndexChanged += delegate { confirm.Enabled = list.SelectedIndices.Count == 1; };
             confirm.Click += delegate { if (list.SelectedIndices.Count != 1) return; SelectedIndex = list.SelectedIndices[0]; DialogResult = DialogResult.OK; Close(); };
             actions.Controls.Add(confirm); actions.Controls.Add(cancel); CancelButton = cancel;

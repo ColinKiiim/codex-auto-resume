@@ -35,6 +35,16 @@ namespace CodexAutoResume
         [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
         [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+        delegate bool EnumProc(IntPtr window, IntPtr parameter);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
+        internal static List<IntPtr> TopWindows()
+        {
+            List<IntPtr> windows = new List<IntPtr>();
+            EnumWindows(delegate(IntPtr h, IntPtr unused)
+            { RECT r; if (IsWindowVisible(h) && GetWindow(h, 4) == IntPtr.Zero && GetWindowRect(h, out r) && r.Right - r.Left >= 250 && r.Bottom - r.Top >= 160) windows.Add(h); return true; }, IntPtr.Zero);
+            return windows;
+        }
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder b, int max);
         [DllImport("user32.dll", SetLastError = true)] public static extern bool RegisterHotKey(IntPtr h, int id, uint modifiers, uint key);
@@ -151,7 +161,28 @@ namespace CodexAutoResume
         }
         public static Target AttachForeground(bool allowDemo)
         {
-            IntPtr h = Native.GetForegroundWindow();
+            return FromWindow(Native.GetForegroundWindow(), allowDemo);
+        }
+        internal static List<Target> FindAvailable(bool allowDemo)
+        {
+            List<Target> found = new List<Target>();
+            foreach (IntPtr window in Native.TopWindows())
+            {
+                try
+                {
+                    using (Process process = Process.GetProcessById(Native.Pid(window)))
+                    {
+                        bool ownDemo = allowDemo && process.Id == Process.GetCurrentProcess().Id && Native.Title(window) == DemoForm.WindowTitle;
+                        if (!ownDemo && !String.Equals(process.ProcessName, "ChatGPT", StringComparison.OrdinalIgnoreCase) && !String.Equals(process.ProcessName, "Codex", StringComparison.OrdinalIgnoreCase)) continue;
+                    }
+                    found.Add(FromWindow(window, allowDemo));
+                }
+                catch { /* A window may close or be inaccessible during discovery. */ }
+            }
+            return found;
+        }
+        internal static Target FromWindow(IntPtr h, bool allowDemo)
+        {
             using (Process proc = Process.GetProcessById(Native.Pid(h)))
             {
                 string path = proc.MainModule.FileName; bool demo;
@@ -240,8 +271,8 @@ namespace CodexAutoResume
                     { reason = "进程已变化，请重新连接"; return false; }
             }
             catch { reason = "无法核实原进程，请重新连接"; return false; }
-            if (Native.IsIconic(Window)) { reason = "Codex 已最小化，后台监控暂停"; return false; }
-            if (!Native.IsWindowVisible(Window)) { reason = "Codex 窗口已隐藏，后台监控暂停"; return false; }
+            if (Native.IsIconic(Window)) { reason = "Codex 已最小化，等待还原，监测继续"; return false; }
+            if (!Native.IsWindowVisible(Window)) { reason = "Codex 窗口已隐藏，等待重新显示，监测继续"; return false; }
             return true;
         }
 

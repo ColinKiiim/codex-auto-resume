@@ -69,7 +69,8 @@ namespace CodexAutoResume
                         IntPtr foreground = Native.GetForegroundWindow();
                         Require(foreground != fixture.Handle, "自测目标仍在前台，请关闭干扰窗口后重试。");
                         Rectangle previous = Rectangle.Empty;
-                        // Use the same four fresh stable-frame rule as normal monitoring.
+                        // Four live-session samples; static content need not emit
+                        // four separate dirty frames. Main monitoring spaces samples.
                         for (int i = 0; i < 4; i++)
                         using (WindowFrame frame = await sampler.ReadAsync(fixture.Handle))
                         {
@@ -95,21 +96,24 @@ namespace CodexAutoResume
                             { string reason; return !linked.IsCancellationRequested && target.ValidateIdentity(out reason) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; }), "自测后台点击被取消。");
                             gate.MarkAttempt(DateTime.UtcNow);
                             await Task.Delay(80, linked.Token);
-                            for (int i = 0; i < 3; i++)
+                            int stable = 0; DateTime squareDeadline = DateTime.UtcNow.AddSeconds(3);
+                            while (stable < 3 && DateTime.UtcNow < squareDeadline)
                             using (WindowFrame running = await sampler.ReadAsync(fixture.Handle))
                             {
                                 linked.Token.ThrowIfCancellationRequested();
                                 Rectangle runningCrop; Detection after = Detect(running, target, recognizer, out runningCrop);
-                                Require(after.State == ButtonState.Running && runningCrop == crop, "后台点击后未识别到稳定方块。");
+                                stable = after.State == ButtonState.Running && runningCrop == crop ? stable + 1 : 0;
                                 gate.Observe(after.State, DateTime.UtcNow);
+                                if (stable < 3) await Task.Delay(80, linked.Token);
                             }
+                            Require(stable == 3, "后台点击后未识别到稳定方块。");
                             Native.POINT pointer; Require(Native.GetCursorPos(out pointer), "无法复核鼠标位置。");
                             Require(before.X == pointer.X && before.Y == pointer.Y, "自测期间鼠标位置变化，请暂勿操作后重试。");
                             Require(Native.GetForegroundWindow() == foreground, "自测期间前台窗口变化，请暂勿操作后重试。");
                         }
                         Require(fixture.Clicks == 1 && gate.Attempts == 1 && gate.Verified == 1, "自测点击计数或恢复确认失败。");
                         return "PASS: fully occluded background diagnostic" + Environment.NewLine +
-                            "完全遮挡窗口：新帧识别三角形→后台点击一次→连续方块确认。" + Environment.NewLine +
+                            "完全遮挡窗口：持续会话识别三角形→后台点击一次→连续方块取样确认。" + Environment.NewLine +
                             "已点击 1；已确认恢复 1；鼠标与前台窗口不变。" + Environment.NewLine +
                             "仅测试工具自带窗口，不会点击 Codex 或发送消息。" + Environment.NewLine +
                             "实际 Codex 是否接受后台操作，仍需在它的暂停场景中验证。";
@@ -120,7 +124,7 @@ namespace CodexAutoResume
                     // Close sends the normal FormClosed lifecycle, removing the
                     // modeless forms from Application.OpenForms before Dispose.
                     try { if (!cover.IsDisposed) cover.Close(); }
-                    finally { if (!fixture.IsDisposed) fixture.Close(); }
+                    finally { if (!fixture.IsDisposed) fixture.Close(); WindowCapture.StopCapture(); }
                 }
             }
         }

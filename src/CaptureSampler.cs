@@ -5,9 +5,9 @@ using System.Threading.Tasks;
 namespace CodexAutoResume
 {
     internal sealed class CaptureDeadlineException : TimeoutException
-    { public CaptureDeadlineException() : base("后台捕获超过 3 秒，监控已停止；可稍后重新开始，若持续等待请重启工具") { } }
+    { public CaptureDeadlineException() : base("本次捕获耗时较长，保持监测并等待系统恢复") { } }
     internal sealed class CaptureBusyException : InvalidOperationException
-    { public CaptureBusyException() : base("上一次系统捕获尚未结束；不会启动新的捕获，请稍后重试或重启工具") { } }
+    { public CaptureBusyException() : base("上一次系统捕获尚未结束，保持监测并等待，不堆积任务") { } }
 
     // A native capture can hang during driver work or session teardown. Never
     // create more workers behind it, and never let its eventual result click.
