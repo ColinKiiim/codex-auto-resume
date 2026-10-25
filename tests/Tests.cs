@@ -88,6 +88,7 @@ namespace CodexAutoResume
                 Check(r.Classify(b).State == ButtonState.Unknown, "reject " + shape + ": " + r.Classify(b));
             }
             GateTests();
+            SamplerTests();
             LocatorTests(r, root);
             IdentityTests();
             string result = "Checks: " + checks + "; failures: " + failures;
@@ -152,6 +153,42 @@ namespace CodexAutoResume
                 IconButton.Draw(g, new Rectangle(248, 122, 64, 64), "三角形");
                 var nearEdge = r.FindButtons(edge);
                 Check(nearEdge.Count == 1 && nearEdge[0].Detection.State == ButtonState.Resume, "button near window edge located with clipped padding");
+            }
+        }
+        static void SamplerTests()
+        {
+            using (System.Threading.ManualResetEvent entered = new System.Threading.ManualResetEvent(false))
+            using (System.Threading.ManualResetEvent release = new System.Threading.ManualResetEvent(false))
+            {
+                int calls = 0; WindowFrame late = null;
+                CaptureSampler sampler = new CaptureSampler(delegate(IntPtr window)
+                {
+                    System.Threading.Interlocked.Increment(ref calls); entered.Set(); release.WaitOne();
+                    late = new WindowFrame { Image = new Bitmap(8, 8) }; return late;
+                });
+                var read = sampler.ReadAsync(IntPtr.Zero, 40);
+                Check(entered.WaitOne(1000), "capture worker started");
+                try { read.GetAwaiter().GetResult(); Check(false, "stalled capture deadline"); }
+                catch (CaptureDeadlineException) { Check(true, "stalled capture has end-to-end deadline"); }
+                Check(sampler.IsBusy, "native worker quarantined after deadline");
+                try { sampler.ReadAsync(IntPtr.Zero, 40).GetAwaiter().GetResult(); Check(false, "no second stalled worker"); }
+                catch (CaptureBusyException) { Check(calls == 1, "second capture rejected without creating a worker"); }
+                release.Set();
+                Check(System.Threading.SpinWait.SpinUntil(delegate { return !sampler.IsBusy; }, 1000), "quarantine clears when native capture returns");
+                Check(late != null && late.Image == null, "late frame disposed and never returned for clicking");
+                using (WindowFrame fresh = sampler.ReadAsync(IntPtr.Zero).GetAwaiter().GetResult())
+                    Check(fresh.Image != null && calls == 2, "subsequent capture works after native worker finishes");
+            }
+            CaptureSampler failing = new CaptureSampler(delegate(IntPtr window) { throw new System.IO.IOException("fixture failure"); });
+            try { failing.ReadAsync(IntPtr.Zero).GetAwaiter().GetResult(); Check(false, "capture failure propagated"); }
+            catch (System.IO.IOException) { Check(!failing.IsBusy, "provider failure clears pending worker"); }
+            using (System.Threading.ManualResetEvent release = new System.Threading.ManualResetEvent(false))
+            {
+                CaptureSampler delayedFailure = new CaptureSampler(delegate(IntPtr window) { release.WaitOne(); throw new System.IO.IOException("late failure"); });
+                try { delayedFailure.ReadAsync(IntPtr.Zero, 20).GetAwaiter().GetResult(); Check(false, "late failure deadline"); }
+                catch (CaptureDeadlineException) { Check(true, "late failing worker times out"); }
+                release.Set();
+                Check(System.Threading.SpinWait.SpinUntil(delegate { return !delayedFailure.IsBusy; }, 1000), "late fault observed and quarantine cleared");
             }
         }
         static void GateTests()

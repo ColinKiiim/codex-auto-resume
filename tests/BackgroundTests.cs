@@ -9,11 +9,12 @@ namespace CodexAutoResume
 {
     internal static class BackgroundTests
     {
+        static readonly CaptureSampler sampler = new CaptureSampler(WindowCapture.Snapshot);
         static void Require(bool value, string description) { if (!value) throw new Exception(description); Console.WriteLine("PASS: " + description); }
         static void Pump(int ms) { DateTime end = DateTime.UtcNow.AddMilliseconds(ms); while (DateTime.UtcNow < end) { Application.DoEvents(); Thread.Sleep(10); } }
         static WindowFrame Capture(IntPtr window)
         {
-            Task<WindowFrame> task = Task.Run(delegate { return WindowCapture.Snapshot(window); });
+            Task<WindowFrame> task = sampler.ReadAsync(window);
             while (!task.IsCompleted) Pump(10);
             return task.GetAwaiter().GetResult();
         }
@@ -45,7 +46,7 @@ namespace CodexAutoResume
                         Require(BackgroundClick.Send(demo.Handle, frame.Bounds, new Point(crop.Left + crop.Width / 2, crop.Top + crop.Height / 2), delegate { return target.ValidateIdentity(out why); }), "one mouse-message pair queued");
                         Pump(300);
                         Native.POINT after; Native.GetCursorPos(out after);
-                        Require(before.X == after.X && before.Y == after.Y, "pointer unchanged");
+                        Require(before.X == after.X && before.Y == after.Y, "pointer unchanged (" + before.X + "," + before.Y + " -> " + after.X + "," + after.Y + ")");
                         Require(Native.GetForegroundWindow() == foregroundBefore, "foreground window unchanged");
                     }
                     using (WindowFrame frame = Capture(demo.Handle))
