@@ -7,6 +7,7 @@ $distPath = Join-Path $projectRoot 'dist'
 New-Item -ItemType Directory -Path $distPath -Force | Out-Null
 $version = [IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION must contain major.minor.patch.' }
+& (Join-Path $projectRoot 'tools\assert-version-policy.ps1') -Version $version
 $generatedVersion = Join-Path $distPath 'Version.g.cs'
 $versionSource = '[assembly: System.Reflection.AssemblyVersion("' + $version + '.0")]' + [Environment]::NewLine + '[assembly: System.Reflection.AssemblyFileVersion("' + $version + '.0")]' + [Environment]::NewLine + 'namespace CodexAutoResume { internal static class BuildVersion { public const string Value = "' + $version + '"; } }'
 [IO.File]::WriteAllText($generatedVersion, $versionSource, [Text.UTF8Encoding]::new($false))

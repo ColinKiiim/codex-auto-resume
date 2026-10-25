@@ -2,6 +2,8 @@
 
 欢迎改进图标识别、窗口定位、后台兼容性、文档和翻译。项目采用 [MIT](LICENSE)。
 
+默认版本系列为 **1.1.x**，常规更新只增加补丁号。AI 可以建议升级系列，但只有维护者明确允许后才能进入 1.2.x 或更高系列。规则见 [AGENTS.md](AGENTS.md) 与 [发布指南](docs/releasing.md)。
+
 ## 反馈问题
 
 先阅读 [FAQ](docs/troubleshooting.md) / [English FAQ](docs/troubleshooting.en.md)，并查看已有 Issues。提交时写明：

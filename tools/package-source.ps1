@@ -3,12 +3,13 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $version = [IO.File]::ReadAllText((Join-Path $projectRoot 'VERSION')).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION must contain major.minor.patch.' }
+& (Join-Path $projectRoot 'tools\assert-version-policy.ps1') -Version $version
 $packageDirectory = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot 'packages' }
 New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
 $archivePath = Join-Path $packageDirectory ('CodexAutoResume-' + $version + '-source.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $filePaths = @()
-foreach ($fileName in @('LICENSE', 'NOTICE', 'README.md', 'README.en.md', 'CONTRIBUTING.md', 'llms.txt', 'CHANGELOG.md', 'VERSION', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
+foreach ($fileName in @('AGENTS.md', 'version-policy.json', 'LICENSE', 'NOTICE', 'README.md', 'README.en.md', 'CONTRIBUTING.md', 'llms.txt', 'CHANGELOG.md', 'VERSION', '.gitignore', 'build.ps1', 'app.manifest', 'Open-CodexAutoResume.cmd')) { $filePaths += Join-Path $projectRoot $fileName }
 foreach ($folder in @('src', 'assets', 'tools', 'docs', 'tests', '.github')) {
     foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -File)) {
         $include = ($folder -ne 'tests' -or $file.Extension -in @('.cs', '.ps1')) -and $file.Name -ne 'background-progress.md'

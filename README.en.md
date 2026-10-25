@@ -77,6 +77,8 @@ Use this repository’s **Issues**. Include the utility version, Codex version, 
 
 The build uses the Windows .NET Framework compiler. See [development](docs/development.md), [contributing](CONTRIBUTING.md), and [release instructions](docs/releasing.md).
 
-Version 1.5.3 passed 4,216 local checks, including numeric citation negatives and real button samples at multiple scales. GUI workflow, occluded-background, and isolated single-EXE checks are documented in the [validation record](docs/validation.md). Current version: [VERSION](VERSION). [Version notes](docs/releases/README.md).
+Version 1.1.7 passed 4,216 local checks, including numeric citation negatives and real button samples at multiple scales. GUI workflow, occluded-background, and isolated single-EXE checks are documented in the [validation record](docs/validation.md). Current version: [VERSION](VERSION). [Version notes](docs/releases/README.md).
+
+Routine releases stay in **1.1.x** and increment the patch number. Moving to 1.2.x or a higher series requires explicit maintainer approval. Agents may suggest an upgrade but may not approve it themselves. See the [version policy](AGENTS.md).
 
 Licensed under [MIT](LICENSE). Independent community project; not affiliated with OpenAI. Product-name and UI-reference details: [NOTICE](NOTICE).

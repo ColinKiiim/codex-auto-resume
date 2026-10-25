@@ -39,7 +39,7 @@ The visible state changes only when needed, with a heartbeat every 1 or 5 minute
 
 ## Can citations, send arrows, or question panels trigger clicks?
 
-Blue numeric citation badges and unknown glyphs are excluded from automatic candidates. Version 1.5.3 includes 1,800 numeric font/weight/scale cases. Send arrows, voice waveforms, running squares, and question panels do not trigger resume clicks. Answers, submissions, and permission approvals remain with the user.
+Blue numeric citation badges and unknown glyphs are excluded from automatic candidates. Version 1.1.7 includes 1,800 numeric font/weight/scale cases. Send arrows, voice waveforms, running squares, and question panels do not trigger resume clicks. Answers, submissions, and permission approvals remain with the user.
 
 If multiple genuine candidates remain, scanning continues. When one remains, normal monitoring resumes automatically. Manual region selection is available.
 

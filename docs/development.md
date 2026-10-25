@@ -24,7 +24,7 @@
 | `.\tests\release-pipeline.ps1` | 发布版本对应、完整性、历史保护、并发锁和源码快照 |
 | `.\tests\background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe` | 隔离单 EXE 的内置后台自测 |
 
-交互与后台专项检查需要可用的 Windows 桌面。自测期间保持鼠标和前台窗口不动。Chromium 测试只对隔离的测试实例关闭遮挡后台节流，Chrome 不是应用运行依赖。发布流程测试需要本地已有 v1.5.0 和 v1.4.0 附件。
+交互与后台专项检查需要可用的 Windows 桌面。自测期间保持鼠标和前台窗口不动。Chromium 测试只对隔离的测试实例关闭遮挡后台节流，Chrome 不是应用运行依赖。发布流程测试需要本地已有 v1.1.4 和 v1.1.3 附件。
 
 `-QuestionImages` 可以向问答测试提供本地截图。不要提交包含对话的完整截图；临时诊断和私人样本不进入源码包。
 

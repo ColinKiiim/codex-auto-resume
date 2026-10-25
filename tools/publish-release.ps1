@@ -8,6 +8,7 @@
     [switch]$PromoteLatest
 )
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'assert-version-policy.ps1') -Version $Version
 $utf8 = New-Object Text.UTF8Encoding($false)
 $exe = (Resolve-Path -LiteralPath $ExecutablePath).Path
 $source = (Resolve-Path -LiteralPath $SourceArchivePath).Path
