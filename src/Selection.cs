@@ -35,6 +35,17 @@ namespace CodexAutoResume
         }
         public void RequestChoice() { requestedChoice = true; }
         public void CancelRequest() { requestedChoice = false; }
+        internal RegionMemory Remember()
+        { return new RegionMemory { Explicit = explicitChoice, Badge = selectedBadge, SearchSize = selectedSearchSize }; }
+        internal void Restore(RegionMemory memory)
+        { if (memory == null) return; explicitChoice = memory.Explicit; selectedBadge = memory.Badge; selectedSearchSize = memory.SearchSize; requestedChoice = false; }
+    }
+
+    public sealed class RegionMemory
+    {
+        public bool Explicit { get; set; }
+        public Rectangle Badge { get; set; }
+        public Size SearchSize { get; set; }
     }
 
     internal sealed class RegionPicker : Form

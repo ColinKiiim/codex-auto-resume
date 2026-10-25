@@ -21,13 +21,13 @@ Treat them separately when investigating. Read the complete message and check ac
 
 ## How can I automatically resume Codex instead of clicking every time?
 
-Download the executable from this repository’s Releases, open Codex desktop, and verify the detected target. Enable **允许自动点击** (Allow automatic clicking). The utility locates the button automatically, with no repeated hotkey or calibration step.
+Download the executable from this repository’s Releases, open Codex desktop, and verify the detected target. Enable **自动恢复** (Allow automatic clicking). The utility locates the button automatically, with no repeated hotkey or calibration step.
 
 A stable resume triangle triggers a pre-click recheck, then a resume attempt. The running square confirms success. Attempts are at least 5 seconds apart. A recognized supported resume button must actually be present; error text alone does not trigger an action.
 
 ## Can it resume Codex while another window completely covers it?
 
-Try **后台模式** (Background mode), keeping Codex unminimized. The target must supply fresh frames and accept window messages. Use F4 / **后台自测** (Background self-test) to check the local capture and input path, then verify your own Codex pause scenario. The self-test uses the utility’s own window, so it does not prove every target version accepts background input.
+Enable **后台监测** (Background monitoring) in Settings, keeping Codex unminimized. The target must supply fresh frames and accept window messages. Use F4 / **后台自测** (Background self-test) to check the local capture and input path, then verify your own Codex pause scenario. The self-test uses the utility’s own window, so it does not prove every target version accepts background input.
 
 ## What about minimized windows, sleep, or the lock screen?
 
@@ -35,7 +35,7 @@ Minimized targets wait until restored. Lock-screen operation is not a supported 
 
 ## Why is the running square unchanged for a long time?
 
-The visible state changes only when needed, with a heartbeat every 1 or 5 minutes. Detailed logs continue every 10 seconds. Compare sampling counts with the last native-frame time: reading cached pixels does not make them a new frame. Content older than 5 seconds is not used for clicking or running confirmation. The utility keeps monitoring and attempts capture recovery.
+The compact window keeps the last observation during normal static periods without an age-based warning. Four timestamped progress entries, refreshed every ten seconds, show that checks continue. Detailed diagnostic logs continue every 10 seconds. Sampling counts and native-frame times are available in Settings → Diagnostics. Reading cached pixels does not create new evidence: a fresh independent acquisition is required before clicking, and a post-click square frame is required for confirmation.
 
 ## Can citations, send arrows, or question panels trigger clicks?
 

@@ -139,7 +139,7 @@ namespace CodexAutoResume
         public uint Dpi;
         public bool Demo;
         public bool Automatic;
-        readonly RegionSelection selection = new RegionSelection();
+        internal readonly RegionSelection selection = new RegionSelection();
         internal int CandidateCount = -1;
         internal void RequestRegionChoice() { selection.RequestChoice(); }
         internal void CancelRegionChoice() { selection.CancelRequest(); }
@@ -280,13 +280,13 @@ namespace CodexAutoResume
             return true;
         }
 
-        internal bool LocateBackground(WindowFrame frame, Recognizer recognizer, Func<Bitmap, List<LocatedButton>, int> choose, out Rectangle crop, out string reason)
+        internal bool LocateBackground(WindowFrame frame, Recognizer recognizer, Func<Bitmap, List<LocatedButton>, int> choose, out Rectangle crop, out string reason, bool requireFresh = true)
         {
             crop = Rectangle.Empty;
             if (!ValidateIdentity(out reason)) return false;
             if ((DateTime.UtcNow - frame.CapturedAt).TotalSeconds > 2 || WindowCapture.Bounds(Window) != frame.Bounds)
             { reason = "捕获帧已过期或窗口已移动，等待新帧"; return false; }
-            if (!frame.ContentFresh(DateTime.UtcNow)) { reason = "画面未更新，当前状态待确认；持续监测并尝试恢复捕获"; return false; }
+            if (requireFresh && !frame.ContentFresh(DateTime.UtcNow)) { reason = "操作前需要重新获取画面"; return false; }
             if (!Automatic)
             {
                 Native.RECT rect; if (!Native.GetWindowRect(Window, out rect)) return false;

@@ -289,15 +289,24 @@ namespace CodexAutoResume
         public bool AwaitingRunning { get; private set; }
         public int Attempts { get; private set; }
         public int Verified { get; private set; }
-        DateTime attemptedAt, lastVerified = DateTime.MinValue;
+        DateTime attemptedAt, firstResumeAt, lastVerified = DateTime.MinValue;
+        internal bool ObserveCaptured(ButtonState state, DateTime now, DateTime contentAt)
+        {
+            // Re-reading a cached square must never acknowledge a later click.
+            if (state == ButtonState.Running && pendingVerification &&
+                (contentAt <= attemptedAt || (now - contentAt).TotalSeconds > 5 || contentAt > now.AddSeconds(1)))
+                state = ButtonState.Unknown;
+            return Observe(state, now);
+        }
         public bool Observe(ButtonState state, DateTime now)
         {
+            if (state == ButtonState.Resume && resumeFrames == 0) firstResumeAt = now;
             if (state == ButtonState.Running) { runningFrames++; resumeFrames = 0; }
             else { runningFrames = 0; resumeFrames = state == ButtonState.Resume ? resumeFrames + 1 : 0; }
             if (pendingVerification && runningFrames >= 1)
             { AwaitingRunning = false; pendingVerification = false; Verified++; lastVerified = now; }
             if (AwaitingRunning && (now - attemptedAt).TotalSeconds >= 5) AwaitingRunning = false;
-            return !AwaitingRunning && resumeFrames >= 4 && (now - attemptedAt).TotalSeconds >= 5 && (now - lastVerified).TotalSeconds >= 5;
+            return !AwaitingRunning && resumeFrames >= 4 && (now - firstResumeAt).TotalMilliseconds >= 900 && (now - attemptedAt).TotalSeconds >= 5 && (now - lastVerified).TotalSeconds >= 5;
         }
         public void MarkAttempt(DateTime now)
         {

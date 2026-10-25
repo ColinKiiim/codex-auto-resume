@@ -38,7 +38,7 @@ namespace CodexAutoResume
         { return stamp == DateTime.MinValue ? "尚无" : Math.Max(0, (now - stamp).TotalSeconds).ToString("F0", CultureInfo.InvariantCulture) + "秒"; }
         public string Summary(DateTime now, bool enabled, bool pending, bool background, int candidates, int attempts, int verified)
         {
-            string freshness = LastContent == DateTime.MinValue ? "尚无画面" : (now - LastContent).TotalSeconds > 5 ? "画面未更新，当前状态待确认" : "最近取样有效";
+            string freshness = LastContent == DateTime.MinValue ? "尚无画面" : (now - LastContent).TotalSeconds > 5 ? "画面静止，保留最近观察" : "最近取样有效";
             return String.Format("{0} · {1} · {2}；{15}；最近图标={3}；读取 {4}/完成 {5}/新帧取样 {6}/缓存 {7}/异常 {8}；上次取样距今 {9}；上次{10}距今 {11}；候选 {12}；尝试 {13}/确认 {14}",
                 enabled ? "监测中" : "已停止", background ? "后台" : "前台", pending ? "等待本次处理返回" : "等待下一轮", LastIcon,
                 Reads, Completed, NewContent, Cached, Errors, Age(LastSample, now), background ? "系统新帧" : "屏幕取样", Age(LastContent, now), candidates, attempts, verified, freshness);

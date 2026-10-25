@@ -83,6 +83,7 @@ namespace CodexAutoResume
                             Require(ready == (i == 3), "自测连续稳定帧检查失败。");
                             using (Bitmap screen = Native.Capture(crop))
                                 Require(recognizer.Classify(screen).State == ButtonState.Unknown, "自测遮挡不完整，请勿移动自测窗口。");
+                            if (i < 3) await Task.Delay(320, linked.Token);
                         }
                         using (WindowFrame fresh = await sampler.ReadAsync(fixture.Handle))
                         {
@@ -103,7 +104,7 @@ namespace CodexAutoResume
                                 linked.Token.ThrowIfCancellationRequested();
                                 Rectangle runningCrop; Detection after = Detect(running, target, recognizer, out runningCrop);
                                 stable = after.State == ButtonState.Running && runningCrop == crop ? stable + 1 : 0;
-                                gate.Observe(after.State, DateTime.UtcNow);
+                                gate.ObserveCaptured(after.State, DateTime.UtcNow, running.ContentAt);
                                 if (stable < 3) await Task.Delay(80, linked.Token);
                             }
                             Require(stable == 3, "后台点击后未识别到稳定方块。");

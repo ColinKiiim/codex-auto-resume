@@ -19,7 +19,7 @@ Downloads: https://github.com/ColinKiiim/codex-auto-resume/releases
 - [At capacity and auto-resume FAQ](docs/troubleshooting.en.md): error triage, resume requirements, background behavior and logs.
 - [中文 FAQ](docs/troubleshooting.md): 容量报错、持续监测、引用编号与后台模式排查。
 - [User guide](docs/user-guide.md): window selection, calibration, self-tests and shortcuts, in Chinese.
-- [Monitoring and logs](docs/monitoring-logs.md): heartbeat cadence and native-frame freshness.
+- [Monitoring and logs](docs/monitoring-logs.md): quiet activity history, native-frame observations, and action freshness.
 
 ## Development and releases
 

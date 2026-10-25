@@ -19,6 +19,9 @@ namespace CodexAutoResume
             Check(QuestionDetector.Matches("1 of 3", "跳过"), "question pager with skip");
             Check(QuestionDetector.Matches("3 of 3", "提交"), "question pager with typed submit");
             Check(QuestionDetector.Matches("Waiting for your answer", "Submit"), "English waiting panel");
+            Check(QuestionDetector.Matches("正在等待你的回答", "继续"), "question context with continue action");
+            Check(QuestionDetector.Matches("1 of 3", "发送"), "question context with send action");
+            Check(!QuestionDetector.Matches("普通输入框", "发送") && !QuestionDetector.Matches("", "继续"), "send or continue without question context is insufficient");
             Check(!QuestionDetector.Matches("普通消息中提到等待你的回答", ""), "quoted waiting text alone is insufficient");
             Check(!QuestionDetector.Matches("1 of 3", ""), "pager alone is insufficient");
             Check(!QuestionDetector.Matches("一般输入框", "提交"), "submit alone is insufficient");
@@ -97,6 +100,7 @@ namespace CodexAutoResume
             }
             GateTests();
             MonitoringTests();
+            UpdateTests.Run(Check, root);
             SamplerTests();
             LocatorTests(r, root);
             CitationTests(r, root);

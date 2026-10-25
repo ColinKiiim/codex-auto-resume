@@ -87,7 +87,8 @@ namespace CodexAutoResume
                         Require(!BackgroundClick.Send(demo.Handle, frame.Bounds, crop.Location, delegate { return false; }), "cancelled validation prevents click");
                         DateTime nativeTime = frame.ContentAt;
                         frame.ContentAt = DateTime.UtcNow.AddHours(-10);
-                        Require(!target.LocateBackground(frame, recognizer, null, out crop, out why) && why.Contains("画面未更新"), "fresh read of ten-hour cached pixels cannot confirm running or locate a clickable button");
+                        Require(!target.LocateBackground(frame, recognizer, null, out crop, out why) && why.Contains("操作前"), "fresh read of ten-hour cached pixels cannot locate an actionable button");
+                        Require(target.LocateBackground(frame, recognizer, null, out crop, out why, false), "static cached picture remains usable for observation without authorizing action");
                         frame.ContentAt = nativeTime;
                         frame.CapturedAt = DateTime.UtcNow.AddSeconds(-3);
                         Require(!target.LocateBackground(frame, recognizer, null, out crop, out why), "expired frame rejected");

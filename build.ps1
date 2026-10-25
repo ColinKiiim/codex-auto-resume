@@ -1,4 +1,4 @@
-param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$BuildOnly)
+param([switch]$BackgroundTests, [switch]$TargetProbe, [switch]$ChromiumTests, [switch]$QuestionTests, [string[]]$QuestionImages, [switch]$WorkflowTests, [switch]$UpdateTests, [switch]$UiTests, [switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -19,6 +19,7 @@ $sources = @($sources) + @($generatedVersion)
 & (Join-Path $projectRoot 'tools\build-icon.ps1')
 $commonArgs = @('/nologo', '/optimize+', '/platform:x64', '/utf8output', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', ('/win32manifest:' + $generatedManifest))
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Graphics.winmd')
+$commonArgs += @('/reference:System.Net.Http.dll', '/reference:System.Web.Extensions.dll')
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Foundation.winmd')
 foreach ($metadata in @('Windows.Media', 'Windows.Storage', 'Windows.Globalization')) { $commonArgs += '/reference:' + (Join-Path $env:WINDIR ('System32\WinMetadata\' + $metadata + '.winmd')) }
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll')
@@ -36,10 +37,24 @@ $commonArgs += '/resource:' + (Join-Path $projectRoot 'LICENSE') + ',LICENSE'
 if ($LASTEXITCODE -ne 0) { throw 'App compilation failed.' }
 $testSource = Join-Path $projectRoot 'tests\Tests.cs'
 if (Test-Path -LiteralPath $testSource) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.Tests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.Tests.exe')) @sources $testSource
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.Tests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.Tests.exe')) @sources $testSource (Join-Path $projectRoot 'tests\UpdateTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & (Join-Path $distPath 'CodexAutoResume.Tests.exe') $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+}
+if ($UiTests) {
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.UiLayoutTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.UiLayoutTests.exe')) @sources (Join-Path $projectRoot 'tests\UiLayoutTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'UI layout test compilation failed.' }
+    & (Join-Path $distPath 'CodexAutoResume.UiLayoutTests.exe') $projectRoot
+    if ($LASTEXITCODE -ne 0) { throw 'UI layout tests failed.' }
+    return
+}
+if ($UpdateTests) {
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.UpdateIntegrationTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.UpdateIntegrationTests.exe')) @sources (Join-Path $projectRoot 'tests\UpdateIntegrationTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Update integration test compilation failed.' }
+    & (Join-Path $distPath 'CodexAutoResume.UpdateIntegrationTests.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Update integration tests failed.' }
+    return
 }
 if ($WorkflowTests) {
     & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.WorkflowTests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.WorkflowTests.exe')) @sources (Join-Path $projectRoot 'tests\WorkflowTests.cs')

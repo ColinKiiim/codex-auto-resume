@@ -15,19 +15,24 @@ namespace CodexAutoResume
     {
         readonly object sync = new object();
         readonly Func<IntPtr, WindowFrame> capture;
+        readonly Func<IntPtr, WindowFrame> actionCapture;
         Task<WindowFrame> pending;
-        public CaptureSampler(Func<IntPtr, WindowFrame> capture) { this.capture = capture; }
+        public CaptureSampler(Func<IntPtr, WindowFrame> capture, Func<IntPtr, WindowFrame> actionCapture = null) { this.capture = capture; this.actionCapture = actionCapture ?? capture; }
         public bool IsBusy { get { lock (sync) return pending != null; } }
         void Clear(Task<WindowFrame> work) { lock (sync) if (pending == work) pending = null; }
 
-        public async Task<WindowFrame> ReadAsync(IntPtr window, int deadlineMilliseconds = 3000)
+        public Task<WindowFrame> ReadAsync(IntPtr window, int deadlineMilliseconds = 3000)
+        { return ReadCoreAsync(window, deadlineMilliseconds, capture); }
+        internal Task<WindowFrame> ReadActionAsync(IntPtr window, int deadlineMilliseconds = 3000)
+        { return ReadCoreAsync(window, deadlineMilliseconds, actionCapture); }
+        async Task<WindowFrame> ReadCoreAsync(IntPtr window, int deadlineMilliseconds, Func<IntPtr, WindowFrame> read)
         {
             if (deadlineMilliseconds <= 0) throw new ArgumentOutOfRangeException("deadlineMilliseconds");
             Task<WindowFrame> work;
             lock (sync)
             {
                 if (pending != null) throw new CaptureBusyException();
-                work = Task.Run(delegate { return capture(window); }); pending = work;
+                work = Task.Run(delegate { return read(window); }); pending = work;
             }
             using (CancellationTokenSource deadline = new CancellationTokenSource())
             {

@@ -76,6 +76,7 @@ namespace CodexAutoResume
         static DateTime latestContentAt;
         static long contentSequence;
         static volatile bool streamClosed;
+        internal static event Action FrameAvailable;
         static bool hasClosedHandler;
         static bool hasFrameHandler;
         static Direct3D11CaptureFrame pendingFrame;
@@ -83,11 +84,9 @@ namespace CodexAutoResume
         static int stopQueued;
         internal static long SessionStarts;
         internal static long PoolRefreshes;
-        static DateTime nextRecovery;
         static DateTime nextSessionAttempt;
         static IntPtr delayedWindow;
         static int consecutiveTimeouts;
-        internal static long WatchdogRecoveries;
 
         static void CloseStream()
         {
@@ -116,7 +115,10 @@ namespace CodexAutoResume
             }
             catch { streamClosed = true; }
             finally { Monitor.Exit(captureLock); }
+            Action available = FrameAvailable;
+            if (available != null) available();
         }
+
 
         public static void StopCapture()
         {
@@ -195,12 +197,25 @@ namespace CodexAutoResume
         }
 
         public static WindowFrame Snapshot(IntPtr window)
+        { return Snapshot(window, false); }
+
+        internal static WindowFrame ActionSnapshot(IntPtr window)
+        { return Snapshot(window, true); }
+
+        static WindowFrame Snapshot(IntPtr window, bool independent)
         {
             Interlocked.Increment(ref requestSerial);
             // Device/context operations are serialized, including when Task.Run changes threads.
             lock (captureLock)
             {
-                try { return SnapshotCore(window); }
+                try
+                {
+                    // Recreate alone cannot make a static window emit a frame.
+                    // A separate session gives action preflight a new acquisition;
+                    // it runs under the sampler's deadline and worker quarantine.
+                    if (independent) CloseStream();
+                    return SnapshotCore(window);
+                }
                 catch (COMException)
                 {
                     CloseStream();
@@ -247,15 +262,6 @@ namespace CodexAutoResume
                     if (latestImage != null)
                     {
                         if (before != Bounds(window) || !Native.IsWindow(window) || Native.IsIconic(window) || streamClosed) throw new InvalidOperationException("窗口状态变化，等待重新定位");
-                        if ((DateTime.UtcNow - latestContentAt).TotalSeconds >= 15 && DateTime.UtcNow >= nextRecovery)
-                        {
-                            nextRecovery = DateTime.UtcNow.AddSeconds(30);
-                            CloseCom(pendingFrame); pendingFrame = null;
-                            latestImage.Dispose(); latestImage = null;
-                            activePool.Recreate(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, new Windows.Graphics.SizeInt32 { Width = before.Width, Height = before.Height });
-                            Interlocked.Increment(ref PoolRefreshes); Interlocked.Increment(ref WatchdogRecoveries);
-                            continue;
-                        }
                         // CapturedAt is the live sample time. ContentAt retains the
                         // actual pixel timestamp; unchanged pixels are never relabelled.
                         return new WindowFrame { Image = new Bitmap(latestImage), Bounds = before, CapturedAt = DateTime.UtcNow,

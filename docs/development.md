@@ -16,7 +16,9 @@
 
 | 命令 | 覆盖范围 |
 |---|---|
-| `.\build.ps1 -WorkflowTests` | 真实主窗体：勾选启动、后台恢复、多候选恢复、心跳、问答和停止 |
+| `.\build.ps1 -WorkflowTests` | 真实主窗体：暂停保持、后台恢复、静止超过阈值、多候选、安静日志、问答和继续 |
+| `.\build.ps1 -UiTests` | 真实局部裁剪、宽问答预览、时间戳进度、按钮对齐与 100/150/200% 几何缩放渲染 |
+| `.\build.ps1 -UpdateTests` | 更新助手真实跨进程替换、启动确认及启动失败回退（隔离副本） |
 | `.\build.ps1 -BackgroundTests` | 遮挡输入、定位、手动标定、尺寸变化、句柄、持续会话与取消清理 |
 | `.\build.ps1 -QuestionTests` | 本机 OCR 问答面板，跳过/提交及面板消失 |
 | `.\build.ps1 -ChromiumTests` | 隔离 Chrome 测试窗口的后台输入路径 |
@@ -32,7 +34,8 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/App.cs` | 窗口、监测循环和演示 |
+| `src/App.cs` / `src/MainUi.cs` | 监测循环、紧凑主窗体、设置、更新交互和演示 |
+| `src/Updates.cs` | GitHub 正式版检测、受限下载、SHA256/EXE 校验、原子替换、启动确认及回退 |
 | `src/Recognition.cs` | 图标识别、引用排除与恢复门控 |
 | `src/Native.cs` | 窗口发现、身份和定位 |
 | `src/Selection.cs` / `src/WindowPicker.cs` | 区域与窗口选择 |

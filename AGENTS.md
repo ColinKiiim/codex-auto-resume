@@ -1,5 +1,11 @@
 # Repository instructions
 
+## Discussion tracking and implementation authorization
+
+- Record actionable discussion outcomes, reported problems, proposed solutions, and unresolved decisions in `TODO.md` during the same turn when useful. Update existing entries rather than duplicating them; distinguish user requirements from proposals that have not been agreed.
+- Read `TODO.md` when continuing project work so pending decisions do not depend on chat context. Keep task status and decisions current as work progresses.
+- On 2026-10-25 the user explicitly authorized implementing all current TODO items (“把todo都做了”), ending the previous discussion-only phase. Continue recording new discussion outcomes; a future discussion-only restriction must still be respected.
+
 ## Versioning — explicit user decision
 
 - Default releases stay in **1.1.x**. Increase only the patch component for ordinary iterations, including features, fixes, refactors and documentation releases.

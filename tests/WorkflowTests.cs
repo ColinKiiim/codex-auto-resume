@@ -10,7 +10,8 @@ namespace CodexAutoResume
     internal static class WorkflowTests
     {
         static T Field<T>(object instance, string name) { return (T)instance.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(instance); }
-        static Button Button(MainForm form, string text) { return form.Controls.OfType<TableLayoutPanel>().Single().Controls.OfType<FlowLayoutPanel>().SelectMany(p => p.Controls.OfType<Button>()).Single(b => b.Text == text); }
+        static object Call(MainForm form, string method) { return form.GetType().GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, null); }
+        static void SetField(object instance, string name, object value) { instance.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(instance, value); }
         static void Require(bool ok, string text) { if (!ok) throw new Exception(text); Console.WriteLine("PASS: " + text); }
         static int Heartbeats(MainForm main) { return Field<TextBox>(main, "logBox").Text.Split(new[] { "心跳：" }, StringSplitOptions.None).Length - 1; }
         static async Task Until(Func<bool> condition, int seconds)
@@ -19,22 +20,33 @@ namespace CodexAutoResume
         {
             Native.SetDpi(); DesktopIdentity.Initialize(); Application.EnableVisualStyles();
             int code = 1;
+            string settingsPath = System.IO.Path.Combine(Portable.DataDirectory, "settings.json");
+            byte[] priorSettings = System.IO.File.Exists(settingsPath) ? System.IO.File.ReadAllBytes(settingsPath) : null;
             using (MainForm main = new MainForm())
             {
+                Field<UserPreferences>(main, "preferences").CheckUpdates = false;
                 main.Shown += async delegate
                 {
                     try
                     {
-                        Button(main, "打开演示").PerformClick();
+                        Call(main, "OpenDemo");
                         DemoForm demo = Field<DemoForm>(main, "demo");
                         CheckBox automatic = Field<CheckBox>(main, "automatic"), background = Field<CheckBox>(main, "background");
                         Require(!automatic.Checked && Field<bool>(main, "monitoring"), "startup observes by default without a shortcut");
                         Require(Target.FindAvailable(true).Any(t => t.Window == demo.Handle), "automatic discovery finds owned demo");
                         using (WindowPicker picker = new WindowPicker(Target.FindAvailable(true))) Require(picker.SelectedIndex == -1, "window choice never has an implicit default");
-                        Button(main, "停止").PerformClick();
+                        Field<Button>(main, "toggle").PerformClick();
                         Require(!Field<bool>(main, "monitoring"), "manual stop halts monitoring");
                         background.Checked = true; automatic.Checked = true;
-                        Require(Field<bool>(main, "monitoring") && Field<Target>(main, "target").Window == demo.Handle, "checkbox starts background mode and preserves connection without hotkeys");
+                        Require(!Field<bool>(main, "monitoring") && Field<Target>(main, "target").Window == demo.Handle, "changing options while paused preserves pause and connection");
+                        Field<Button>(main, "toggle").PerformClick();
+                        Require(Field<bool>(main, "monitoring"), "explicit continue starts monitoring without shortcuts");
+                        Call(main, "ShowSettings");
+                        Field<Form>(main, "settingsWindow").Close();
+                        Call(main, "ShowSettings");
+                        Require(!background.IsDisposed && !Field<NumericUpDown>(main, "cropSize").IsDisposed, "settings can reopen without disposing shared options");
+                        Field<Form>(main, "settingsWindow").Close();
+                        long idlePoolRefresh;
                         using (Form cover = new Form { Text = "CodexAutoResume workflow cover", Bounds = Rectangle.Inflate(demo.Bounds, 20, 20), BackColor = Color.Magenta, TopMost = true, StartPosition = FormStartPosition.Manual })
                         {
                             cover.Show(); cover.Activate();
@@ -43,7 +55,7 @@ namespace CodexAutoResume
                             IconButton icon = demo.Controls.OfType<IconButton>().Single(c => c.Visible);
                             CheckBox multiple = demo.Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<CheckBox>().Single();
                             multiple.Checked = true;
-                            await Until(() => Field<Target>(main, "target").CandidateCount == 2 && Field<Label>(main, "status").Text.Contains("多个候选"), 8);
+                            await Until(() => Field<Target>(main, "target").CandidateCount == 2 && Field<Label>(main, "status").Text.Contains("多个按钮"), 8);
                             long reads = Field<MonitorActivity>(main, "activity").Reads;
                             await Task.Delay(1800);
                             Require(Field<bool>(main, "monitoring") && Field<MonitorActivity>(main, "activity").Reads > reads && !Application.OpenForms.OfType<RegionPicker>().Any(), "transient multiple candidates keep scanning without an automatic blocking dialog");
@@ -53,7 +65,7 @@ namespace CodexAutoResume
                             Require(Field<CheckBox>(main, "automatic").Checked && Field<CheckBox>(main, "background").Checked, "return to single candidate preserves background automatic-click mode");
                             multiple.Checked = true;
                             await Until(() => Field<Target>(main, "target").CandidateCount == 2, 8);
-                            Button(main, "选择区域").PerformClick();
+                            Call(main, "RequestRegion");
                             await Until(() => Application.OpenForms.OfType<RegionPicker>().Any(), 8);
                             RegionPicker chooser = Application.OpenForms.OfType<RegionPicker>().Single(); chooser.DialogResult = DialogResult.Cancel; chooser.Close();
                             await Task.Delay(600);
@@ -61,14 +73,28 @@ namespace CodexAutoResume
                             multiple.Checked = false; icon.State = "三角形"; icon.Invalidate();
                             await Until(() => Field<ResumeGate>(main, "gate").Verified == 3, 12);
                             int beats = Heartbeats(main);
-                            Field<MonitorPulse>(main, "uiPulse").Reset(DateTime.UtcNow.AddSeconds(-61));
-                            await Until(() => Heartbeats(main) == beats + 1, 4);
-                            await Task.Delay(1200); Require(Heartbeats(main) == beats + 1, "unchanged icon generates one scheduled heartbeat instead of per-tick messages");
-                            ComboBox interval = Field<ComboBox>(main, "heartbeatInterval"); interval.SelectedIndex = 1;
-                            Field<MonitorPulse>(main, "uiPulse").Reset(DateTime.UtcNow.AddSeconds(-61)); await Task.Delay(1300);
-                            Require(Heartbeats(main) == beats + 1, "five-minute UI option suppresses one-minute heartbeat");
-                            Field<MonitorPulse>(main, "uiPulse").Reset(DateTime.UtcNow.AddSeconds(-301));
-                            await Until(() => Heartbeats(main) == beats + 2, 4);
+                            icon.State = "语音"; icon.Invalidate();
+                            await Until(() => Field<Label>(main, "status").Text == "等待操作", 5);
+                            idlePoolRefresh = WindowCapture.PoolRefreshes;
+                            reads = Field<MonitorActivity>(main, "activity").Reads;
+                            string quietLog = Field<TextBox>(main, "logBox").Text;
+                            string priorProgress = Field<TextBox>(main, "recentLog").Text;
+                            await Task.Delay(17000);
+                            Require(Field<Label>(main, "status").Text == "等待操作" && Field<bool>(main, "monitoring"), "static voice state stays calm beyond previous five- and fifteen-second thresholds");
+                            Require(Field<Timer>(main, "timer").Interval == 3000 && !Field<Timer>(main, "stabilityTimer").Enabled, "idle monitoring uses a three-second fallback without the temporary fast timer");
+                            Require(Field<TextBox>(main, "recentLog").Text != priorProgress && Field<TextBox>(main, "recentLog").Lines.Length <= 4, "timestamped home progress refreshes during static monitoring and stays bounded");
+                            Require(WindowCapture.PoolRefreshes == idlePoolRefresh, "static window does not trigger capture-pool rebuild");
+                            Require(Field<MonitorActivity>(main, "activity").Reads > reads && Heartbeats(main) == beats && Field<TextBox>(main, "logBox").Text == quietLog, "quiet monitoring continues without UI heartbeat or repeated activity messages");
+                            await Until(() => !Field<bool>(main, "updating"), 3);
+                            SetField(main, "updating", true);
+                            icon.State = "向上箭头"; icon.Invalidate(); await Task.Delay(250);
+                            Require(Field<bool>(main, "frameDirty"), "a frame arriving during an active read is retained for a trailing wake");
+                            SetField(main, "updating", false);
+                            System.Diagnostics.Stopwatch changedAt = System.Diagnostics.Stopwatch.StartNew();
+                            await Until(() => Field<Label>(main, "status").Text == "等待发送", 2);
+                            Require(changedAt.ElapsedMilliseconds < 1500, "trailing frame is handled promptly without waiting for the three-second fallback");
+                            icon.State = "语音"; icon.Invalidate(); await Until(() => Field<Label>(main, "status").Text == "等待操作", 3);
+                            using (Bitmap ui = new Bitmap(main.Width, main.Height)) { main.DrawToBitmap(ui, new Rectangle(Point.Empty, ui.Size)); ui.Save(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "CodexAutoResume-running-ui.png")); }
                             Field<MonitorPulse>(main, "filePulse").Reset(DateTime.UtcNow.AddSeconds(-11));
                             await Task.Delay(1200);
                             string detailed = System.IO.File.ReadAllText(System.IO.Path.Combine(Portable.DataDirectory, "logs", "diagnostics.log"));
@@ -94,6 +120,7 @@ namespace CodexAutoResume
                                 demo.ClientSize = question.Size; demo.Location = new Point(20,20);
                                 demo.Controls.Add(panel); panel.BringToFront(); cover.Bounds = Rectangle.Inflate(demo.Bounds, 20, 20);
                                 await Until(() => Field<Label>(main, "scores").Text.StartsWith("等待用户回答"), 15);
+                                Require(Field<bool>(main, "questionPreview") && Field<PictureBox>(main, "preview").Image.Width > 200, "live question recognition switches the home preview to the broader question region");
                                 string questionLog = Field<TextBox>(main, "logBox").Text;
                                 await Task.Delay(4600);
                             Require(Field<ResumeGate>(main, "gate").Attempts == 4 && Field<bool>(main, "monitoring"), "question panel keeps monitoring without clicking submit");
@@ -103,20 +130,19 @@ namespace CodexAutoResume
                             demo.ClientSize = new Size(760,420); cover.Bounds = Rectangle.Inflate(demo.Bounds, 20,20);
                             icon.State = "三角形"; icon.Invalidate();
                             await Until(() => Field<ResumeGate>(main, "gate").Verified == 5, 15);
-                            Require(Field<TextBox>(main, "logBox").Text.Contains("问答面板已消失"), "question disappearance returns automatically to icon detection");
-                            Button(main, "停止").PerformClick();
+                            Require(Field<TextBox>(main, "logBox").Text.Contains("继续监测"), "question disappearance returns automatically to icon detection");
+                            Field<Button>(main, "toggle").PerformClick();
                             icon.State = "三角形"; icon.Invalidate(); await Task.Delay(1800);
                             Require(Field<ResumeGate>(main, "gate").Attempts == 5 && !Field<bool>(main, "monitoring"), "explicit stop remains stopped");
                             automatic.Checked = false; automatic.Checked = true;
-                            Require(Field<bool>(main, "monitoring"), "checking automatic click restarts after manual stop");
-                            Button(main, "停止").PerformClick();
+                            Require(!Field<bool>(main, "monitoring"), "automatic recovery toggle cannot restart paused monitoring");
                             using (Bitmap ui = new Bitmap(main.Width, main.Height)) { main.DrawToBitmap(ui, new Rectangle(Point.Empty, ui.Size)); ui.Save(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "CodexAutoResume-workflow-ui.png")); }
                             cover.Close();
                         }
                         Console.WriteLine("PASS: workflow uses no keyboard shortcuts or physical mouse input"); code = 0;
                     }
                     catch (Exception e) { Console.Error.WriteLine(e); }
-                    finally { main.Close(); }
+                    finally { main.Close(); if (priorSettings == null) System.IO.File.Delete(settingsPath); else System.IO.File.WriteAllBytes(settingsPath, priorSettings); }
                 };
                 Application.Run(main);
             }
