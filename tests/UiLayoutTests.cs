@@ -76,7 +76,10 @@ namespace CodexAutoResume
                     }
                     if (scale == 1)
                     {
-                        Call(main, "ShowSettings"); Form window = Field<Form>(main, "settingsWindow"); Render(window, "CodexAutoResume-settings-ui"); window.Close();
+                        Call(main, "ShowSettings"); Form window = Field<Form>(main, "settingsWindow");
+                        Require(Object.ReferenceEquals(Call(main, "UpdateDialogOwner"), window), "open settings owns update results");
+                        Render(window, "CodexAutoResume-settings-ui"); window.Close();
+                        Require(window.IsDisposed && Object.ReferenceEquals(Call(main, "UpdateDialogOwner"), main), "closing settings during a check returns update dialogs to the live main window");
                     }
                     main.Close();
                 }

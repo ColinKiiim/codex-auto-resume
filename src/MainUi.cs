@@ -311,6 +311,9 @@ namespace CodexAutoResume
         void RecordVerified(int previous)
         { if (gate.Verified > previous) AppendVisible("已恢复", "recovery"); RefreshUi(); }
 
+        Form UpdateDialogOwner()
+        { return settingsWindow != null && !settingsWindow.IsDisposed ? settingsWindow : this; }
+
         async Task CheckUpdatesAsync(bool manual)
         {
             if (checkingUpdate || installingUpdate || diagnosing || IsDisposed || (!manual && !preferences.CheckUpdates)) return;
@@ -319,7 +322,7 @@ namespace CodexAutoResume
             {
                 AvailableUpdate update = await Updates.CheckAsync(lifetime.Token);
                 if (IsDisposed || lifetime.IsCancellationRequested) return;
-                if (update == null) { if (manual) MessageBox.Show(settingsWindow ?? this, "当前已是最新正式版。", "检查更新"); return; }
+                if (update == null) { if (manual) MessageBox.Show(UpdateDialogOwner(), "当前已是最新正式版。", "检查更新"); return; }
                 if (!manual && (preferences.SkippedVersion == update.Version || announcedVersions.Contains(update.Version))) return;
                 announcedVersions.Add(update.Version);
                 using (Form prompt = new Form { Text = "发现新版本", Font = Font, ClientSize = new Size(500, 330), StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, Icon = Icon })
@@ -331,16 +334,16 @@ namespace CodexAutoResume
                     Button later = UiButton("稍后", delegate { prompt.DialogResult = DialogResult.Cancel; });
                     actions.Controls.Add(now); actions.Controls.Add(later); actions.Controls.Add(UiButton("跳过此版本", delegate { prompt.DialogResult = DialogResult.Ignore; }));
                     prompt.AcceptButton = now; prompt.CancelButton = later; prompt.Controls.Add(notes); prompt.Controls.Add(actions); prompt.Controls.Add(title);
-                    DialogResult result = prompt.ShowDialog(settingsWindow != null && !settingsWindow.IsDisposed ? settingsWindow : this);
+                    DialogResult result = prompt.ShowDialog(UpdateDialogOwner());
                     if (result == DialogResult.Ignore) { preferences.SkippedVersion = update.Version; SavePreferences(); }
                     if (result == DialogResult.OK) await InstallUpdateAsync(update);
                 }
             }
-            catch (OperationCanceledException) { if (manual && !IsDisposed && !lifetime.IsCancellationRequested) MessageBox.Show(settingsWindow ?? this, "检查更新超时，请稍后重试。", "检查更新"); }
+            catch (OperationCanceledException) { if (manual && !IsDisposed && !lifetime.IsCancellationRequested) MessageBox.Show(UpdateDialogOwner(), "检查更新超时，请稍后重试。", "检查更新"); }
             catch (Exception e)
             {
                 journal.Write("diagnostics.log", "update-check", e.GetType().Name + ": " + e.Message, DateTime.UtcNow);
-                if (manual && !IsDisposed) MessageBox.Show(settingsWindow != null && !settingsWindow.IsDisposed ? settingsWindow : this, "暂时无法检查更新，请稍后重试。\n" + e.Message, "检查更新");
+                if (manual && !IsDisposed) MessageBox.Show(UpdateDialogOwner(), "暂时无法检查更新，请稍后重试。\n" + e.Message, "检查更新");
             }
             finally { checkingUpdate = false; }
         }
