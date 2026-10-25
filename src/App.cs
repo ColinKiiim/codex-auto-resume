@@ -42,11 +42,13 @@ namespace CodexAutoResume
         string lastCaptureError;
         DateTime lastCaptureErrorAt;
         DateTime nextMonitor;
-        DateTime nextActionRefresh;
         long lastObservedContent = -1;
         ButtonState lastObservedState = ButtonState.Unknown;
         bool questionReported;
         ResumeGate gate = new ResumeGate();
+        readonly RecoveryWindow recoveryWindow = new RecoveryWindow();
+        readonly CaptureWatchdog captureWatchdog = new CaptureWatchdog();
+        Func<InputSnapshot> inputReader = Native.ReadInput;
         Target target;
         readonly Timer timer = new Timer();
         readonly CheckBox automatic = new CheckBox { Text = "允许自动点击（勾选即开始）", AutoSize = true };
@@ -162,7 +164,7 @@ namespace CodexAutoResume
         void Connect(Target connected)
         {
             questions.Reset(); questionReported = false; nextMonitor = DateTime.MinValue;
-            regionChoiceRequested = false; activity.ResetSource(); ResetPreview(); lastObservedContent = -1; nextActionRefresh = DateTime.MinValue;
+            regionChoiceRequested = false; recoveryWindow.Reset(); captureWatchdog.Reset(); activity.ResetSource(); ResetPreview(); lastObservedContent = -1;
             generation++; target = connected; gate = new ResumeGate(); lastBadge = Rectangle.Empty;
             waitingForChoice = false; monitoring = true; toggle.Text = "暂停监测";
             SetStatus(automatic.Checked ? "已连接窗口，自动点击中；暂时捕获不到也会持续监测" : "已连接窗口，持续观察；勾选允许自动点击即可生效");
@@ -170,7 +172,7 @@ namespace CodexAutoResume
         void ActivateOptions(string message)
         {
             if (diagnosing) return;
-            generation++; gate.BreakStreak();
+            recoveryWindow.Reset(); generation++; gate.BreakStreak();
             WatchResume(lastObservedState);
             questions.Reset(); nextMonitor = DateTime.MinValue;
             questionTimer.Stop();
@@ -209,7 +211,7 @@ namespace CodexAutoResume
         {
             if (diagnosing) return;
             if (monitoring) { Stop("已暂停"); return; }
-            gate.BreakStreak(); monitoring = true; waitingForChoice = false; nextDiscovery = DateTime.MinValue; toggle.Text = "暂停监测";
+            recoveryWindow.Reset(); gate.BreakStreak(); monitoring = true; waitingForChoice = false; nextDiscovery = DateTime.MinValue; toggle.Text = "暂停监测";
             questions.Reset(); nextMonitor = DateTime.MinValue;
             SetStatus(automatic.Checked ? "监控中：允许自动点击" : "监控中：仅观察，不会点击");
         }
@@ -220,7 +222,7 @@ namespace CodexAutoResume
             stabilityTimer.Stop();
             questionTimer.Stop();
             frameDirty = false; frameTimer.Stop();
-            generation++; monitoring = false; gate.BreakStreak(); toggle.Text = "开始观察"; SetStatus(message);
+            recoveryWindow.Reset(); generation++; monitoring = false; gate.BreakStreak(); toggle.Text = "开始观察"; SetStatus(message);
             questions.Reset();
             regionChoiceRequested = false; if (target != null) target.CancelRegionChoice();
             HealthTick();
@@ -244,7 +246,7 @@ namespace CodexAutoResume
                 {
                     if (!monitoring || target != connected || generation != revision) return;
                     if (reason == "正在自动寻找蓝色圆按钮；找不到时可用手动标定备用" || reason == "候选区域需要用户确认") activity.Foreground(DateTime.UtcNow);
-                    gate.BreakStreak();
+                    recoveryWindow.Reset(); gate.BreakStreak();
                     if (reason == "已取消区域选择") { SetStatus("已取消手动区域选择；保持连接，持续扫描，恢复单候选后自动继续"); return; }
                     if (reason == "候选区域需要用户确认") { CandidateWait(); return; }
                     gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
@@ -258,7 +260,7 @@ namespace CodexAutoResume
                 activity.Foreground(DateTime.UtcNow); activity.Recognized(d.State);
                 Rectangle badgeScreen = d.ButtonBounds; badgeScreen.Offset(crop.Location);
                 if (!d.ButtonBounds.IsEmpty && !lastBadge.IsEmpty &&
-                    (Math.Abs(badgeScreen.X - lastBadge.X) > 2 || Math.Abs(badgeScreen.Y - lastBadge.Y) > 2)) gate.BreakStreak();
+                    (Math.Abs(badgeScreen.X - lastBadge.X) > 2 || Math.Abs(badgeScreen.Y - lastBadge.Y) > 2)) { gate.BreakStreak(); recoveryWindow.Reset(); recoveryWindow.Observe(d.State, DateTime.UtcNow); }
                 lastBadge = badgeScreen;
                 int previousVerified = gate.Verified;
                 bool ready = gate.Observe(d.State, DateTime.UtcNow); RecordVerified(previousVerified);
@@ -270,16 +272,18 @@ namespace CodexAutoResume
                     return;
                 }
                 if (!automatic.Checked) { SetStatus("检测到暂停 · 仅观察"); return; }
-                if (!Native.UserIdle()) { SetStatus("三角形已确认；等待鼠标、键盘空闲 0.7 秒"); return; }
+                InputSnapshot input = inputReader();
+                if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return; }
                 Point center = new Point(crop.Left + d.ButtonBounds.Left + d.ButtonBounds.Width / 2, crop.Top + d.ButtonBounds.Top + d.ButtonBounds.Height / 2);
-                bool clicked = Native.Click(target.Window, crop, center, delegate
+                bool clicked = BackgroundClick.Send(target.Window, WindowCapture.Bounds(target.Window), center, delegate
                 {
+                    if (!recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow)) return false;
                     Rectangle fresh; string why;
                     if (!target.Locate(recognizer, null, out fresh, out why) || fresh != crop) return false;
                     using (Bitmap b = Native.Capture(fresh))
                     {
                         Detection again = recognizer.Classify(b);
-                        return again.State == ButtonState.Resume && Math.Abs(again.ButtonBounds.X - d.ButtonBounds.X) <= 2 && Math.Abs(again.ButtonBounds.Y - d.ButtonBounds.Y) <= 2;
+                        return recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow) && again.State == ButtonState.Resume && Math.Abs(again.ButtonBounds.X - d.ButtonBounds.X) <= 2 && Math.Abs(again.ButtonBounds.Y - d.ButtonBounds.Y) <= 2;
                     }
                 });
                 if (clicked) { gate.MarkAttempt(DateTime.UtcNow); RefreshScores(d); SetStatus("已发送一次鼠标点击，正在检查是否变为方块"); }
@@ -294,7 +298,7 @@ namespace CodexAutoResume
 
         void CandidateWait()
         {
-            stabilityTimer.Stop();
+            recoveryWindow.Reset(); stabilityTimer.Stop();
             gate.BreakStreak(); gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
             int count = target == null ? -1 : target.CandidateCount;
             SetStatus(count > 1 ? "发现多个候选，暂停点击但持续扫描；恢复单候选后自动继续，也可点“选择区域”" : "原选区域已变化，持续扫描；原区域恢复后继续，或点“选择区域”重选");
@@ -344,7 +348,7 @@ namespace CodexAutoResume
                 if (questionReported) { questionReported = false; scores.Text = "问答面板已消失，恢复正常图标检测"; SetStatus("问答面板已消失，恢复正常图标检测"); }
                 return false;
             }
-            questionReported = true;
+            recoveryWindow.Reset(); questionReported = true;
             stabilityTimer.Stop();
             activity.LastIcon = "等待用户回答";
             questionTimer.Start();
@@ -367,7 +371,7 @@ namespace CodexAutoResume
 
         void BackgroundWait(string reason)
         {
-            stabilityTimer.Stop();
+            recoveryWindow.Reset(); stabilityTimer.Stop();
             gate.BreakStreak(); gate.ObserveCaptured(ButtonState.Unknown, DateTime.UtcNow, DateTime.MinValue);
             if (reason == "候选区域需要用户确认") CandidateWait();
             else if (reason == "已取消区域选择") SetStatus("继续监测");
@@ -385,6 +389,18 @@ namespace CodexAutoResume
                 WindowFrame captured;
                 try { captured = await ReadBackground(connected, revision); }
                 catch (Exception e) { if (Current(connected, revision)) BackgroundWait(e.Message); return; }
+                if (Current(connected, revision) && Native.GetForegroundWindow() != connected.Window && lastObservedState != ButtonState.Resume &&
+                    !gate.AwaitingRunning && captureWatchdog.Due(DateTime.UtcNow, captured.ContentAt))
+                {
+                    captureWatchdog.Started(DateTime.UtcNow);
+                    try
+                    {
+                        WindowFrame probe = await ReadBackground(connected, revision, true);
+                        journal.Write("diagnostics.log", "capture-probe", "before=" + captured.ContentAt.ToString("O") + "; independent=" + probe.ContentAt.ToString("O") + "; previous-icon=" + lastObservedState + "; previous-pixels=" + captureWatchdog.LastSignature + "; independent-sequence=" + probe.ContentSequence, DateTime.UtcNow);
+                        captured.Dispose(); captured = probe;
+                    }
+                    catch (Exception error) { journal.Write("diagnostics.log", "capture-probe", "retained-live-session; " + error.Message, DateTime.UtcNow); }
+                }
                 using (WindowFrame frame = captured)
                 {
                     if (!Current(connected, revision)) return;
@@ -421,8 +437,9 @@ namespace CodexAutoResume
                     using (Bitmap b = frame.Image.Clone(local, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
                     { d = recognizer.Classify(b); UpdatePreview(b, d); }
                     activity.Recognized(d.State); lastObservedContent = frame.ContentSequence; lastObservedState = d.State;
+                    if (frame.Source == "independent") journal.Write("diagnostics.log", "capture-probe-result", "state=" + d.State + "; pixels=" + captureWatchdog.LastSignature + "; crop=" + crop + "; sequence=" + frame.ContentSequence, DateTime.UtcNow);
                     Rectangle badge = d.ButtonBounds; badge.Offset(crop.Location);
-                    if (!lastBadge.IsEmpty && (Math.Abs(badge.X - lastBadge.X) > 2 || Math.Abs(badge.Y - lastBadge.Y) > 2)) gate.BreakStreak();
+                    if (!lastBadge.IsEmpty && (Math.Abs(badge.X - lastBadge.X) > 2 || Math.Abs(badge.Y - lastBadge.Y) > 2)) { gate.BreakStreak(); recoveryWindow.Reset(); recoveryWindow.Observe(d.State, DateTime.UtcNow); }
                     lastBadge = badge;
                     int previousVerified = gate.Verified;
                     bool ready = gate.ObserveCaptured(d.State, DateTime.UtcNow, frame.ContentAt); RecordVerified(previousVerified);
@@ -431,8 +448,8 @@ namespace CodexAutoResume
                     if (!ready)
                     { ObserveStatus(d.State); return; }
                     if (!automatic.Checked) { SetStatus("检测到暂停 · 仅观察"); return; }
-                    if (DateTime.UtcNow < nextActionRefresh) return;
-                    nextActionRefresh = DateTime.UtcNow.AddSeconds(5);
+                    InputSnapshot input = inputReader();
+                    if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return; }
                     // An action needs an independent acquisition, including when
                     // the triangle has been sitting still for a long time.
                     using (WindowFrame fresh = await ReadBackground(connected, revision, true))
@@ -448,7 +465,7 @@ namespace CodexAutoResume
                         { BackgroundWait("后台点击前图标变化，已取消本次点击"); return; }
                         Point center = new Point(freshCrop.Left + again.ButtonBounds.Left + again.ButtonBounds.Width / 2, freshCrop.Top + again.ButtonBounds.Top + again.ButtonBounds.Height / 2);
                         bool sent = BackgroundClick.Send(connected.Window, fresh.Bounds, center, delegate
-                        { string why; return Current(connected, revision) && automatic.Checked && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
+                        { string why; return Current(connected, revision) && automatic.Checked && recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow) && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
                         if (sent) { gate.MarkAttempt(DateTime.UtcNow); RefreshScores(d); SetStatus("后台操作已投递：" + BackgroundClick.LastRoute + "；等待方块确认，尚不计为成功"); }
                         else BackgroundWait("后台点击前窗口状态变化，已取消本次点击");
                     }
@@ -463,6 +480,7 @@ namespace CodexAutoResume
             Rectangle bounds = d.ButtonBounds.IsEmpty ? new Rectangle(Point.Empty, b.Size) : Rectangle.Inflate(d.ButtonBounds, 3, 3);
             bounds.Intersect(new Rectangle(Point.Empty, b.Size));
             Image previous = preview.Image; preview.Image = b.Clone(bounds, System.Drawing.Imaging.PixelFormat.Format32bppRgb); if (previous != null) previous.Dispose();
+            captureWatchdog.Observe(CaptureWatchdog.Signature((Bitmap)preview.Image), DateTime.UtcNow);
             SetPreviewKind(false);
             RefreshScores(d);
         }

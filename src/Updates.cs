@@ -89,6 +89,19 @@ namespace CodexAutoResume
     internal sealed class AvailableUpdate
     {
         internal string Version, Tag, Notes, AssetName, DownloadUrl, ChecksumsUrl, Digest;
+        internal DateTime PublishedAt;
+    }
+
+    internal sealed class ReleaseCheck
+    {
+        internal string PublishedVersion;
+        internal AvailableUpdate Update;
+        internal string Message(string current, bool english)
+        {
+            bool ahead = Updates.ParseVersion(current) > Updates.ParseVersion(PublishedVersion);
+            return (english ? (ahead ? "This version is ahead of the published release" : "No newer published release is available") : (ahead ? "当前版本高于线上正式版" : "暂无更高版本的已发布更新")) +
+                "\n\n" + (english ? "Current version: " : "当前版本：") + current + "\n" + (english ? "Published version: " : "线上正式版本：") + PublishedVersion + "\n" + (english ? "Source: GitHub stable releases" : "来源：GitHub 正式发布");
+        }
     }
 
     public sealed class UpdateJob
@@ -132,6 +145,8 @@ namespace CodexAutoResume
             if (ParseVersion(version) <= ParseVersion(currentVersion)) return null;
             string name = "CodexAutoResume-" + tag + "-windows-x64.exe";
             AvailableUpdate update = new AvailableUpdate { Version = version, Tag = tag, AssetName = name, Notes = data.ContainsKey("body") ? data["body"] as string : "" };
+            DateTime published;
+            if (data.ContainsKey("published_at") && DateTime.TryParse(data["published_at"] as string, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out published)) update.PublishedAt = published;
             object[] assets = data["assets"] as object[];
             IEnumerable list = assets != null ? (IEnumerable)assets : data["assets"] as IEnumerable;
             if (list == null) throw new InvalidDataException("新版缺少下载附件");
@@ -175,16 +190,26 @@ namespace CodexAutoResume
             return client;
         }
         internal static async Task<AvailableUpdate> CheckAsync(CancellationToken cancel)
+        { return (await CheckLatestAsync(cancel).ConfigureAwait(false)).Update; }
+        internal static ReleaseCheck ParseCheck(string json, string current)
         {
-            using (HttpClient client = Client(TimeSpan.FromSeconds(20)))
+            Dictionary<string, object> data = new JavaScriptSerializer { MaxJsonLength = 2 * 1024 * 1024 }.Deserialize<Dictionary<string, object>>(json);
+            string tag = data == null || !data.ContainsKey("tag_name") ? null : data["tag_name"] as string;
+            if (String.IsNullOrEmpty(tag) || !tag.StartsWith("v") || !data.ContainsKey("draft") || !data.ContainsKey("prerelease") || (bool)data["draft"] || (bool)data["prerelease"])
+                throw new InvalidDataException("更新源没有返回有效的正式版本");
+            string version = tag.Substring(1); ParseVersion(version);
+            return new ReleaseCheck { PublishedVersion = version, Update = ParseRelease(json, current) };
+        }
+        internal static async Task<ReleaseCheck> CheckLatestAsync(CancellationToken cancel)
+        {
+            using (HttpClient client = Client(TimeSpan.FromSeconds(25)))
             using (HttpResponseMessage response = await client.GetAsync(LatestUrl, HttpCompletionOption.ResponseHeadersRead, cancel).ConfigureAwait(false))
             {
-                if (response.StatusCode == HttpStatusCode.NotFound) return null;
                 response.EnsureSuccessStatusCode();
                 using (Stream input = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
                 using (MemoryStream output = new MemoryStream())
                 using (CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel))
-                { deadline.CancelAfter(20000); await CopyBounded(input, output, 2 * 1024 * 1024, deadline.Token).ConfigureAwait(false); return ParseRelease(Encoding.UTF8.GetString(output.ToArray()), Portable.Version); }
+                { deadline.CancelAfter(20000); await CopyBounded(input, output, 2 * 1024 * 1024, deadline.Token).ConfigureAwait(false); return ParseCheck(Encoding.UTF8.GetString(output.ToArray()), Portable.Version); }
             }
         }
         internal static async Task CopyBounded(Stream input, Stream output, long maximum, CancellationToken cancel)

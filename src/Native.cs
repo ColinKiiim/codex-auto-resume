@@ -30,7 +30,6 @@ namespace CodexAutoResume
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
         [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
         [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
-        [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
         [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
         [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
@@ -74,12 +73,18 @@ namespace CodexAutoResume
         public static uint Dpi(IntPtr h) { try { return GetDpiForWindow(h); } catch { return 96; } }
         public static string Title(IntPtr h) { StringBuilder s = new StringBuilder(512); GetWindowText(h, s, s.Capacity); return s.ToString(); }
         public static int Pid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return (int)p; }
-        public static bool UserIdle()
+        internal static InputSnapshot ReadInput()
         {
-            foreach (int k in new int[] { 1, 2, 4, 16, 17, 18 }) if ((GetAsyncKeyState(k) & 0x8000) != 0) return false;
-            LASTINPUTINFO i = new LASTINPUTINFO { size = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)) };
-            return GetLastInputInfo(ref i) && unchecked((uint)Environment.TickCount - i.time) >= 700;
+            LASTINPUTINFO info = new LASTINPUTINFO { size = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)) };
+            if (!GetLastInputInfo(ref info)) return new InputSnapshot();
+            bool held = false;
+            for (int key = 1; key < 256; key++)
+                if (key != 3 && (GetAsyncKeyState(key) & 0x8000) != 0) { held = true; break; }
+            uint age = unchecked((uint)Environment.TickCount - info.time);
+            return new InputSnapshot { Valid = age < 0x80000000u, Tick = info.time, IdleMilliseconds = age, Held = held };
         }
+        public static bool UserIdle()
+        { InputSnapshot input = ReadInput(); return input.Valid && !input.Held && input.IdleMilliseconds >= RecoveryWindow.QuietMilliseconds; }
         public static bool Uncovered(IntPtr h, Rectangle r)
         {
             if (GetForegroundWindow() != h || IsIconic(h)) return false;
@@ -96,37 +101,7 @@ namespace CodexAutoResume
             try { using (Graphics g = Graphics.FromImage(b)) g.CopyFromScreen(r.Location, Point.Empty, r.Size); return b; }
             catch { b.Dispose(); throw; }
         }
-        public static bool Click(IntPtr h, Rectangle region, Point center, Func<bool> recheck)
-        {
-            if (!UserIdle() || !Uncovered(h, region)) return false;
-            POINT old;
-            if (!GetCursorPos(out old) || !SetCursorPos(center.X, center.Y)) return false;
-            try
-            {
-                // Recheck AFTER cursor movement; hover can change or replace the button.
-                if (!Uncovered(h, region) || !recheck()) return false;
-                POINT beforeInput;
-                if (!GetCursorPos(out beforeInput) || beforeInput.X != center.X || beforeInput.Y != center.Y ||
-                    !Uncovered(h, region)) return false;
-                INPUT[] events = new INPUT[2];
-                events[0].u.mouse.dwFlags = 0x0002;
-                events[1].u.mouse.dwFlags = 0x0004;
-                uint sent = SendInput(2, events, Marshal.SizeOf(typeof(INPUT)));
-                if (sent != 2)
-                {
-                    // A partial batch may leave the left button down. Release it.
-                    INPUT[] release = new INPUT[1]; release[0].u.mouse.dwFlags = 0x0004;
-                    SendInput(1, release, Marshal.SizeOf(typeof(INPUT)));
-                    throw new InvalidOperationException("SendInput incomplete (" + sent + "/2). Monitoring stopped.");
-                }
-                return true;
-            }
-            finally
-            {
-                POINT current;
-                if (GetCursorPos(out current) && current.X == center.X && current.Y == center.Y) SetCursorPos(old.X, old.Y);
-            }
-        }
+
     }
 
     internal sealed class Target

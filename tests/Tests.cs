@@ -101,6 +101,7 @@ namespace CodexAutoResume
             GateTests();
             MonitoringTests();
             UpdateTests.Run(Check, root);
+            RecoveryTests();
             SamplerTests();
             LocatorTests(r, root);
             CitationTests(r, root);
@@ -296,6 +297,55 @@ namespace CodexAutoResume
             Check(failing.WriteFailed, "log write failure is reported without stopping monitoring");
             foreach (string path in Directory.GetFiles(folder)) File.Delete(path); Directory.Delete(folder);
         }
+        static void RecoveryTests()
+        {
+            DateTime start = new DateTime(2026, 10, 25, 8, 0, 0, DateTimeKind.Utc);
+            RecoveryWindow window = new RecoveryWindow();
+            InputSnapshot idle = new InputSnapshot { Valid = true, Tick = 100, IdleMilliseconds = 10000 };
+            window.Observe(ButtonState.Resume, start);
+            Check(!window.Ready(idle, start.AddMilliseconds(1499)), "triangle observation itself requires 1.5 seconds");
+            Check(window.Ready(idle, start.AddMilliseconds(1500)), "stable triangle and 1.5s quiet can resume");
+            InputSnapshot typing = new InputSnapshot { Valid = true, Tick = 200, IdleMilliseconds = 0 };
+            Check(!window.Ready(typing, start.AddSeconds(4)), "typing cancels quiet eligibility");
+            typing.IdleMilliseconds = 1499;
+            Check(!window.Ready(typing, start.AddSeconds(6)), "any new input needs a complete new quiet window");
+            typing.IdleMilliseconds = 1500;
+            Check(window.Ready(typing, start.AddSeconds(6)), "quiet period expires without a manual-pause latch");
+            typing.Held = true;
+            Check(!window.Ready(typing, start.AddSeconds(8)), "held keys or mouse buttons block recovery even without new events");
+            Check(!window.Ready(new InputSnapshot(), start.AddSeconds(8)), "unavailable input evidence blocks recovery");
+            Check(!window.Unchanged(idle, typing, start.AddSeconds(8)), "input during action preflight cancels the click");
+            typing.Held = false;
+            Check(!window.Unchanged(idle, typing, start.AddSeconds(8)), "a changed input stamp cancels even when the later sample is idle");
+            foreach (ButtonState state in new[] { ButtonState.Running, ButtonState.Send, ButtonState.Voice, ButtonState.Unknown })
+            {
+                window.Observe(state, start.AddSeconds(10));
+                Check(!window.Ready(idle, start.AddSeconds(12)), "non-resume state clears input window " + state);
+                window.Observe(ButtonState.Resume, start.AddSeconds(12));
+                Check(!window.Ready(idle, start.AddSeconds(13)), "new triangle starts a new window " + state);
+            }
+            window.Reset(); Check(!window.Ready(idle, start.AddSeconds(30)), "pause or target change clears eligibility");
+            CaptureWatchdog watchdog = new CaptureWatchdog();
+            watchdog.Observe("square", start);
+            Check(!watchdog.Due(start.AddSeconds(11), start.AddSeconds(11)), "quiet capture probes are low frequency");
+            Check(watchdog.Due(start.AddSeconds(12), start.AddSeconds(12)), "identical badge pixels trigger a probe despite fresh frame timestamps");
+            watchdog.Started(start.AddSeconds(12));
+            Check(!watchdog.Due(start.AddSeconds(13), start), "probe failure or static pixels cannot cause a probe storm");
+            watchdog.Observe("triangle", start.AddSeconds(24));
+            Check(!watchdog.Due(start.AddSeconds(24), start.AddSeconds(24)), "a real badge change resets the pixel watchdog");
+            Check(watchdog.Due(start.AddSeconds(36), start.AddSeconds(24)), "old content also triggers independent verification");
+            watchdog.Reset(); Check(!watchdog.Due(start.AddSeconds(40), start.AddSeconds(40)), "target change clears the watchdog");
+            string notes = "## 中文\n### 改进\n- **滚动进度**\n- 支持 `中文`\n## English\n### Improved\n- **Scrollable progress**\n- Language switch\n## 已知限制 / Known limitation\n仍在排查遮挡\nStill investigating covered windows";
+            ReleaseSummary zh = ReleaseSummary.Parse(notes, false), en = ReleaseSummary.Parse(notes, true);
+            Check(zh.Items.Count == 2 && zh.Items[0] == "滚动进度" && !String.Join("", zh.Items).Contains("Scrollable"), "Chinese release summary selects and formats only Chinese items");
+            Check(en.Items.Count == 2 && en.Items[0] == "Scrollable progress" && en.Limitation == "Still investigating covered windows", "English release summary preserves the English known issue");
+            Check(zh.Limitation == "仍在排查遮挡", "known issues remain visible separately from summary truncation");
+            Check(ReleaseSummary.Parse("", false).Items.Count == 1, "empty release notes retain a readable fallback");
+            ReleaseCheck check = Updates.ParseCheck("{\"tag_name\":\"v1.1.10\",\"draft\":false,\"prerelease\":false}", "1.1.11");
+            Check(check.Update == null && check.Message("1.1.11", false).Contains("高于") && check.Message("1.1.11", false).Contains("1.1.10"), "ahead-of-published result reports both versions accurately");
+            Check(Updates.ParseCheck("{\"tag_name\":\"v1.1.11\",\"draft\":false,\"prerelease\":false}", "1.1.11").Message("1.1.11", true).Contains("No newer"), "same-version result reports no newer published release");
+        }
+
         static void GateTests()
         {
             DateTime t = new DateTime(2026, 10, 24, 0, 0, 0, DateTimeKind.Utc);

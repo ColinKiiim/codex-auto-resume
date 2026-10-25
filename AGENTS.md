@@ -24,4 +24,4 @@
 
 - On 2026-10-25 the user explicitly requested that completed releases default to committing and pushing source, creating the matching version tag, and publishing the complete GitHub Release with executable, source archive and SHA256 checksums. A local build/export alone does not finish release delivery. No repeated approval is required unless the user restricts remote changes in that task.
 - Verify the published official latest-release endpoint and assets after publication; keep archived source and binaries immutable and make each tag match its own source snapshot.
-- The immediate instruction is to publish 1.1.8, 1.1.9 and 1.1.10, with 1.1.10 latest. Do not implement the pending TODO investigations or UI proposals until the user requests implementation.
+- The user subsequently requested completing the remaining TODO items. Implement items 5–8 for 1.1.11, following the latest 1.5-second idle-window requirement; do not introduce a manual-pause latch.

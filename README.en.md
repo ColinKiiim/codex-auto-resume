@@ -34,7 +34,7 @@ Source builds also create `release/CodexAutoResume.exe`. Download the executable
 
 ## Behavior
 
-- **Resume triangle:** repeated stable samples, an independent pre-click check, and at least 5 seconds between attempts.
+- **Resume triangle:** wait at least 1.5 seconds after detection and 1.5 seconds without mouse/keyboard input; new input restarts the quiet period. Both modes use window messages without moving the pointer. Independent pre-click evidence and a five-second attempt interval remain.
 - **Running square:** observation and confirmation of a successful resume.
 - **Send arrow / voice waveform:** observation only.
 - **Question panel:** records the waiting state and waits for user input.
@@ -79,7 +79,7 @@ Use this repository’s **Issues**. Include the utility version, Codex version, 
 
 The build uses the Windows .NET Framework compiler. See [development](docs/development.md), [contributing](CONTRIBUTING.md), and [release instructions](docs/releasing.md).
 
-Version 1.1.10 adds Chinese/English switching, scrollable session progress and clearer sample captions to the compact interface, quiet static monitoring and automatic updates. Recognition, update transaction, GUI workflow, occluded-background, and isolated single-EXE results are documented in the [validation record](docs/validation.md). Current version: [VERSION](VERSION). [Version notes](docs/releases/README.md).
+Version 1.1.11 adds a shared input inactivity window, readable localized update summaries, and low-frequency independent capture verification with local comparison export. Covered-window behavior still depends on the target renderer and needs verification on affected systems. Recognition, update transaction, GUI workflow, occluded-background, and isolated single-EXE results are documented in the [validation record](docs/validation.md). Current version: [VERSION](VERSION). [Version notes](docs/releases/README.md).
 
 Routine releases stay in **1.1.x** and increment the patch number. Moving to 1.2.x or a higher series requires explicit maintainer approval. Agents may suggest an upgrade but may not approve it themselves. See the [version policy](AGENTS.md).
 

@@ -21,6 +21,7 @@ namespace CodexAutoResume
         public DateTime ContentAt;
         public long ContentSequence;
         public long Sequence;
+        public string Source;
         public bool ContentFresh(DateTime now) { return ContentAt != DateTime.MinValue && (now - ContentAt).TotalSeconds >= -1 && (now - ContentAt).TotalSeconds <= 5; }
         public void Dispose() { if (Image != null) { Image.Dispose(); Image = null; } }
     }
@@ -74,7 +75,7 @@ namespace CodexAutoResume
         static Size activeSize;
         static Bitmap latestImage;
         static DateTime latestContentAt;
-        static long contentSequence;
+        static long contentSequence, latestContentSequence;
         static volatile bool streamClosed;
         internal static event Action FrameAvailable;
         static bool hasClosedHandler;
@@ -213,17 +214,17 @@ namespace CodexAutoResume
                     // Recreate alone cannot make a static window emit a frame.
                     // A separate session gives action preflight a new acquisition;
                     // it runs under the sampler's deadline and worker quarantine.
-                    if (independent) CloseStream();
-                    return SnapshotCore(window);
+                    return independent ? IndependentCore(window) : SnapshotCore(window);
                 }
                 catch (COMException)
                 {
+                    if (independent) throw;
                     CloseStream();
                     D3dDevice old = sharedDevice; sharedDevice = null;
                     if (old != null) old.Dispose();
                     throw;
                 }
-                catch (TimeoutException) { CloseStream(); delayedWindow = window; consecutiveTimeouts++; nextSessionAttempt = DateTime.UtcNow.AddSeconds(Math.Min(10, Math.Max(0, (consecutiveTimeouts - 1) * 2))); throw; }
+                catch (TimeoutException) { if (independent) throw; CloseStream(); delayedWindow = window; consecutiveTimeouts++; nextSessionAttempt = DateTime.UtcNow.AddSeconds(Math.Min(10, Math.Max(0, (consecutiveTimeouts - 1) * 2))); throw; }
             }
         }
 
@@ -237,6 +238,7 @@ namespace CodexAutoResume
                 while (DateTime.UtcNow < deadline)
                 {
                     if (streamClosed) throw new InvalidOperationException("系统捕获会话已关闭，等待重新连接");
+                    bool received = false;
                     Direct3D11CaptureFrame frame = pendingFrame; pendingFrame = null;
                     // Discard superseded queued frames and read the most recent.
                     for (int i = 0; i < 8; i++)
@@ -252,10 +254,14 @@ namespace CodexAutoResume
                             Bitmap bitmap;
                             try { bitmap = Read(surface, sharedDevice.Device, sharedDevice.Context, frame.ContentSize.Width, frame.ContentSize.Height); }
                             finally { if (surface != null && Marshal.IsComObject(surface)) Marshal.ReleaseComObject(surface); }
-                            if (latestImage != null) latestImage.Dispose(); latestImage = bitmap;
+                            DateTime stamp = FrameTime(frame);
+                            if (latestImage == null || stamp >= latestContentAt)
+                            {
+                                if (latestImage != null) latestImage.Dispose(); latestImage = bitmap;
+                                latestContentAt = stamp; latestContentSequence = Interlocked.Increment(ref contentSequence); received = true;
+                            }
+                            else bitmap.Dispose();
                             consecutiveTimeouts = 0;
-                            double ageTicks = Stopwatch.GetTimestamp() * (10000000.0 / Stopwatch.Frequency) - frame.SystemRelativeTime.Ticks;
-                            latestContentAt = DateTime.UtcNow.AddTicks(-(long)Math.Max(0, ageTicks)); Interlocked.Increment(ref contentSequence);
                         }
                     }
                     finally { CloseCom(frame); }
@@ -265,11 +271,76 @@ namespace CodexAutoResume
                         // CapturedAt is the live sample time. ContentAt retains the
                         // actual pixel timestamp; unchanged pixels are never relabelled.
                         return new WindowFrame { Image = new Bitmap(latestImage), Bounds = before, CapturedAt = DateTime.UtcNow,
-                            ContentAt = latestContentAt, ContentSequence = contentSequence, Sequence = Interlocked.Increment(ref sequence) };
+                            ContentAt = latestContentAt, ContentSequence = latestContentSequence, Source = received ? "session" : "cached", Sequence = Interlocked.Increment(ref sequence) };
                     }
                     Thread.Sleep(15);
                 }
                 throw new TimeoutException("后台捕获未收到新帧；不会使用旧图点击");
+        }
+
+        static DateTime FrameTime(Direct3D11CaptureFrame frame)
+        {
+            double age = Stopwatch.GetTimestamp() * (10000000.0 / Stopwatch.Frequency) - frame.SystemRelativeTime.Ticks;
+            return DateTime.UtcNow.AddTicks(-(long)Math.Max(0, age));
+        }
+
+        // A probe has its own pool/session and never tears down a healthy live
+        // session or discards its cache when a covered target emits no new frame.
+        static WindowFrame IndependentCore(IntPtr window)
+        {
+            if (!Supported || !Native.IsWindow(window) || Native.IsIconic(window) || !Native.IsWindowVisible(window))
+                throw new InvalidOperationException("目标无法捕获，等待窗口恢复");
+            Rectangle bounds = Bounds(window);
+            IntPtr name = IntPtr.Zero, itemPtr = IntPtr.Zero; ItemInterop factory = null;
+            GraphicsCaptureItem item = null; Direct3D11CaptureFramePool pool = null; GraphicsCaptureSession session = null;
+            try
+            {
+                string className = "Windows.Graphics.Capture.GraphicsCaptureItem";
+                Check(WindowsCreateString(className, className.Length, out name)); Guid factoryId = typeof(ItemInterop).GUID;
+                Check(RoGetActivationFactory(name, ref factoryId, out factory));
+                Guid itemId = new Guid("79C3F95B-31F7-4EC2-A464-632EF5D30760");
+                itemPtr = factory.CreateForWindow(window, ref itemId); item = (GraphicsCaptureItem)Marshal.GetObjectForIUnknown(itemPtr);
+                if (sharedDevice == null) sharedDevice = new D3dDevice();
+                pool = Direct3D11CaptureFramePool.CreateFreeThreaded(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, item.Size);
+                session = pool.CreateCaptureSession(item); session.StartCapture(); Interlocked.Increment(ref SessionStarts);
+                DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+                while (DateTime.UtcNow < deadline)
+                {
+                    using (Direct3D11CaptureFrame frame = pool.TryGetNextFrame())
+                    {
+                        if (frame == null) { Thread.Sleep(15); continue; }
+                        if (!Native.IsWindow(window) || Native.IsIconic(window) || !Native.IsWindowVisible(window) || Bounds(window) != bounds ||
+                            frame.ContentSize.Width != bounds.Width || frame.ContentSize.Height != bounds.Height)
+                            throw new InvalidOperationException("窗口状态变化，取消独立捕获");
+                        Bitmap bitmap; IDirect3DSurface surface = frame.Surface;
+                        try { bitmap = Read(surface, sharedDevice.Device, sharedDevice.Context, bounds.Width, bounds.Height); }
+                        finally { if (surface != null && Marshal.IsComObject(surface)) Marshal.ReleaseComObject(surface); }
+                        DateTime contentAt = FrameTime(frame); long content = Interlocked.Increment(ref contentSequence);
+                        if (activeWindow == window && (latestImage == null || contentAt >= latestContentAt))
+                        {
+                            if (latestImage != null) latestImage.Dispose(); latestImage = new Bitmap(bitmap);
+                            latestContentAt = contentAt; latestContentSequence = content;
+                        }
+                        return new WindowFrame { Image = bitmap, Bounds = bounds, CapturedAt = DateTime.UtcNow, ContentAt = contentAt,
+                            ContentSequence = content, Sequence = Interlocked.Increment(ref sequence), Source = "independent" };
+                    }
+                }
+                throw new TimeoutException("独立捕获未收到画面，保留现有会话");
+            }
+            finally
+            {
+                try { CloseCom(session); }
+                finally
+                {
+                    try { CloseCom(pool); }
+                    finally
+                    {
+                        if (item != null && Marshal.IsComObject(item)) Marshal.ReleaseComObject(item);
+                        if (factory != null) Marshal.ReleaseComObject(factory); Release(ref itemPtr);
+                        if (name != IntPtr.Zero) WindowsDeleteString(name);
+                    }
+                }
+            }
         }
 
         static Bitmap Read(IDirect3DSurface surface, IntPtr device, IntPtr context, int width, int height)

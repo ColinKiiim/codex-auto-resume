@@ -29,6 +29,7 @@ namespace CodexAutoResume
                 foreach (float scale in new[] { 1f, 1.5f, 2f })
                 using (MainForm main = new MainForm())
                 {
+                    main.GetType().GetField("inputReader", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, (Func<InputSnapshot>)(() => new InputSnapshot { Valid = true, Tick = 100, IdleMilliseconds = 10000 }));
                     Field<UserPreferences>(main, "preferences").CheckUpdates = false; UiText.SetLanguage(language);
                     Field<Timer>(main, "timer").Stop(); Field<Timer>(main, "healthTimer").Stop();
                     main.Show(); Call(main, "OpenDemo"); Field<CheckBox>(main, "automatic").Checked = true;
@@ -114,6 +115,27 @@ namespace CodexAutoResume
                         if (language == "zh-CN") Require(Field<Label>(main, "status").Text == "等待你的回答" && All(main).OfType<Button>().Any(c => c.Text == "设置"), "switching back restores Chinese status and controls");
                         Render(window, "CodexAutoResume-settings-ui-" + language); window.Close();
                         Require(window.IsDisposed && Object.ReferenceEquals(Call(main, "UpdateDialogOwner"), main), "closing settings during a check returns update dialogs to the live main window");
+                    }
+                    using (UpdatePrompt prompt = new UpdatePrompt(new AvailableUpdate { Version = "1.1.11", Tag = "v1.1.11", PublishedAt = DateTime.UtcNow,
+                        Notes = "## 中文\n### 改进\n- 最近进度支持滚动查看历史\n- 前后台等待连续 1.5 秒输入空闲再恢复\n- 改善更新提示的信息展示\n## English\n### Improved\n- Scroll through recent progress\n- Wait for 1.5 seconds of input inactivity before resuming\n- Clearer update summaries\n## 已知限制 / Known limitation\n遮挡捕获仍需在实际环境验证\nCovered capture still needs validation in the affected environment" }, "1.1.10"))
+                    {
+                        prompt.Show(main); Application.DoEvents();
+                        if (scale != 1)
+                        {
+                            Control[] controls = All(prompt).Concat(new Control[] { prompt }).ToArray();
+                            Font[] fonts = controls.Select(c => c.Font).ToArray();
+                            prompt.AutoScaleMode = AutoScaleMode.None; prompt.Scale(new SizeF(scale, scale));
+                            for (int i = 0; i < controls.Length; i++) controls[i].Font = new Font(fonts[i].FontFamily, fonts[i].SizeInPoints * scale, fonts[i].Style);
+                        }
+                        prompt.PerformLayout(); Application.DoEvents();
+                        Require(!All(prompt).OfType<TextBoxBase>().Any(), "update notes use reading controls without text-box selection");
+                        Require(Object.ReferenceEquals(prompt.ActiveControl, prompt.Later) && Object.ReferenceEquals(prompt.AcceptButton, prompt.Later), "update prompt focuses Later and does not default Enter to installation");
+                        Require(prompt.Summary.Items.Count == 3 && prompt.Summary.Limitation.Length > 0, "update summary selects one language and preserves known issues");
+                        Require(All(prompt).OfType<Label>().All(c => !c.Text.StartsWith("#")), "update prompt never exposes Markdown headings");
+                        Require(All(prompt).Where(c => c.Visible && c.Parent != prompt.Notes).All(c => c.Parent.ClientRectangle.Contains(c.Bounds)), "fixed update controls stay within their parents at " + scale);
+                        Require(prompt.Notes.HorizontalScroll.Maximum <= prompt.Notes.ClientSize.Width || !prompt.Notes.HorizontalScroll.Visible, "update notes wrap without horizontal scrolling at " + scale);
+                        Render(prompt, "CodexAutoResume-update-" + language + "-" + (int)(scale * 100));
+                        prompt.Later.PerformClick(); Require(prompt.DialogResult == DialogResult.Cancel, "Later closes without starting an update"); prompt.Close();
                     }
                     main.Close();
                 }

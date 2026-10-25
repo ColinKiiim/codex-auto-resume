@@ -9,7 +9,7 @@ namespace CodexAutoResume
 {
     internal static class BackgroundTests
     {
-        static readonly CaptureSampler sampler = new CaptureSampler(WindowCapture.Snapshot);
+        static readonly CaptureSampler sampler = new CaptureSampler(WindowCapture.Snapshot, WindowCapture.ActionSnapshot);
         static void Require(bool value, string description) { if (!value) throw new Exception(description); Console.WriteLine("PASS: " + description); }
         static void Pump(int ms) { DateTime end = DateTime.UtcNow.AddMilliseconds(ms); while (DateTime.UtcNow < end) { Application.DoEvents(); Thread.Sleep(10); } }
         static WindowFrame Capture(IntPtr window)
@@ -156,6 +156,26 @@ namespace CodexAutoResume
                     demo.Width += 24; cover.Bounds = Rectangle.Inflate(demo.Bounds, 25, 25); Pump(100);
                     using (WindowFrame frame = WaitFor(demo.Handle, f => f.Bounds.Size == WindowCapture.Bounds(demo.Handle).Size))
                         Require(!manual.LocateBackground(frame, recognizer, null, out crop, out why) && why == "窗口大小或缩放已变化，请重新标定", "manual background calibration rejects resized window");
+                    Native.POINT comparisonPointer; Native.GetCursorPos(out comparisonPointer);
+                    IntPtr comparisonForeground = Native.GetForegroundWindow();
+                    long persistentStarts = WindowCapture.SessionStarts;
+                    Task<WindowFrame> probeRead = sampler.ReadActionAsync(demo.Handle);
+                    while (!probeRead.IsCompleted) Pump(10);
+                    using (WindowFrame independent = probeRead.GetAwaiter().GetResult())
+                    using (WindowFrame following = Capture(demo.Handle))
+                    {
+                        Require(independent.Source == "independent" && WindowCapture.SessionStarts == persistentStarts + 1, "independent probe adds one isolated session without replacing the live session");
+                        Require(following.ContentAt >= independent.ContentAt && following.ContentSequence >= independent.ContentSequence, "live cache never rolls back to an older frame after an independent probe");
+                    }
+                    string comparisonDirectory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "CodexAutoResume-comparison-test-" + Guid.NewGuid().ToString("N"));
+                    Task comparison = CaptureComparison.RunAsync(target, sampler, comparisonDirectory);
+                    while (!comparison.IsCompleted) Pump(10);
+                    comparison.GetAwaiter().GetResult();
+                    Require(System.IO.File.Exists(System.IO.Path.Combine(comparisonDirectory, "02-independent.png")) && System.IO.File.ReadAllText(System.IO.Path.Combine(comparisonDirectory, "comparison.txt")).Contains("source=independent"), "capture comparison exports persistent and independent images with timestamps, hashes and coordinates");
+                    Native.POINT comparisonAfter; Native.GetCursorPos(out comparisonAfter);
+                    Require(comparisonPointer.X == comparisonAfter.X && comparisonPointer.Y == comparisonAfter.Y && comparisonForeground == Native.GetForegroundWindow(), "read-only capture comparison leaves pointer and foreground unchanged");
+                    foreach (string file in System.IO.Directory.GetFiles(comparisonDirectory)) System.IO.File.Delete(file);
+                    System.IO.Directory.Delete(comparisonDirectory);
                     // A repeated-capture resource check detects retained WinRT/D3D handles.
                     for (int i = 0; i < 5; i++) using (WindowFrame frame = Capture(demo.Handle)) { }
                     long starts = WindowCapture.SessionStarts;

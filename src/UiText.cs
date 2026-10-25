@@ -44,6 +44,10 @@ namespace CodexAutoResume
             { "通常只需几秒；请暂勿操作鼠标或切换窗口", "Please keep the mouse and foreground window unchanged" },
             { "关闭此窗口可取消自测", "Close this window to cancel the test" },
             { "CodexAutoResume 已在运行，请使用现有窗口", "CodexAutoResume is already running; use the existing window" },
+            { "等待你完成操作", "Waiting for you to finish" },
+            { "导出捕获对照", "Capture comparison" },
+            { "请先连接窗口并等待当前检查完成", "Connect a window and wait for the current check" },
+            { "正在导出捕获对照", "Exporting capture comparison" },
             { "设置", "Settings" },
             { "暂停", "Pause" },
             { "继续监测", "Resume" },
@@ -51,7 +55,7 @@ namespace CodexAutoResume
             { "方式", "Mode" },
             { "更换", "Change" },
             { "自动恢复", "Auto-resume" },
-            { "检测到暂停时自动继续；关闭后仅观察", "Resume when paused; otherwise observe only" },
+            { "暂停后空闲 1.5 秒自动继续；关闭后仅观察", "Resume after 1.5s idle; otherwise observe" },
             { "最近进度", "Recent progress" },
             { "完整记录", "Full history" },
             { "选择区域", "Select area" },
@@ -178,6 +182,7 @@ namespace CodexAutoResume
             if (!English) return clean;
             string result;
             if (english.TryGetValue(clean, out result)) return result;
+            if (clean.StartsWith("画面 ")) return clean.Replace("画面 ", "Frame ").Replace(" · 检查 ", " · Checked ");
             Match time = Regex.Match(clean, @"^(\d{2}:\d{2}:\d{2}\s+)(.*)$");
             if (time.Success) return time.Groups[1].Value + Get(time.Groups[2].Value);
             if (clean.StartsWith("按钮收到的点击：")) return "Button clicks: " + clean.Substring("按钮收到的点击：".Length);

@@ -24,7 +24,8 @@ namespace CodexAutoResume
             byte[] priorSettings = System.IO.File.Exists(settingsPath) ? System.IO.File.ReadAllBytes(settingsPath) : null;
             using (MainForm main = new MainForm())
             {
-                Field<UserPreferences>(main, "preferences").CheckUpdates = false; UiText.SetLanguage("zh-CN");
+                main.GetType().GetField("inputReader", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, (Func<InputSnapshot>)(() => new InputSnapshot { Valid = true, Tick = 100, IdleMilliseconds = 10000 }));
+                    Field<UserPreferences>(main, "preferences").CheckUpdates = false; UiText.SetLanguage("zh-CN");
                 main.Shown += async delegate
                 {
                     try
@@ -75,11 +76,12 @@ namespace CodexAutoResume
                             int beats = Heartbeats(main);
                             icon.State = "语音"; icon.Invalidate();
                             await Until(() => Field<Label>(main, "status").Text == "等待操作", 5);
-                            idlePoolRefresh = WindowCapture.PoolRefreshes;
+                            idlePoolRefresh = WindowCapture.PoolRefreshes; long idleSessions = WindowCapture.SessionStarts;
                             reads = Field<MonitorActivity>(main, "activity").Reads;
                             string quietLog = Field<TextBox>(main, "logBox").Text;
                             string priorProgress = Field<TextBox>(main, "recentLog").Text;
                             await Task.Delay(17000);
+                            Require(WindowCapture.SessionStarts > idleSessions, "static non-resume states receive low-frequency independent verification without needing a triangle");
                             Require(Field<Label>(main, "status").Text == "等待操作" && Field<bool>(main, "monitoring"), "static voice state stays calm beyond previous five- and fifteen-second thresholds");
                             Require(Field<Timer>(main, "timer").Interval == 3000 && !Field<Timer>(main, "stabilityTimer").Enabled, "idle monitoring uses a three-second fallback without the temporary fast timer");
                             Require(Field<TextBox>(main, "recentLog").Text != priorProgress && Field<TextBox>(main, "recentLog").Text.StartsWith(priorProgress), "timestamped home progress refreshes during static monitoring and retains earlier history");
@@ -139,6 +141,30 @@ namespace CodexAutoResume
                             using (Bitmap ui = new Bitmap(main.Width, main.Height)) { main.DrawToBitmap(ui, new Rectangle(Point.Empty, ui.Size)); ui.Save(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "CodexAutoResume-workflow-ui.png")); }
                             cover.Close();
                         }
+                        CheckBox mode = Field<CheckBox>(main, "background");
+                        IconButton resumeIcon = demo.Controls.OfType<IconButton>().Single(c => c.Visible);
+                        DateTime lastInput = DateTime.UtcNow; uint stamp = 500; bool held = true;
+                        SetField(main, "inputReader", (Func<InputSnapshot>)(() => new InputSnapshot { Valid = true, Tick = stamp, Held = held,
+                            IdleMilliseconds = (uint)Math.Max(0, (DateTime.UtcNow - lastInput).TotalMilliseconds) }));
+                        Field<Button>(main, "toggle").PerformClick();
+                        resumeIcon.State = "三角形"; resumeIcon.Invalidate();
+                        await Task.Delay(2200);
+                        Require(Field<ResumeGate>(main, "gate").Attempts == 5, "background does not resume while input is held");
+                        held = false; lastInput = DateTime.UtcNow; stamp++;
+                        await Task.Delay(1000); lastInput = DateTime.UtcNow; stamp++;
+                        await Task.Delay(1000);
+                        Require(Field<ResumeGate>(main, "gate").Attempts == 5, "new input restarts the complete quiet window");
+                        await Until(() => Field<ResumeGate>(main, "gate").Verified == 6, 8);
+                        Require((DateTime.UtcNow - lastInput).TotalMilliseconds >= 1500, "background waits 1.5s after the last input without a manual-pause latch");
+                        mode.Checked = false; demo.Activate();
+                        held = true; resumeIcon.State = "三角形"; resumeIcon.Invalidate(); await Task.Delay(5500);
+                        Require(Field<ResumeGate>(main, "gate").Attempts == 6, "foreground also respects held input");
+                        Native.POINT pointerBefore; Native.GetCursorPos(out pointerBefore);
+                        held = false; lastInput = DateTime.UtcNow; stamp++;
+                        await Task.Delay(1000); Require(Field<ResumeGate>(main, "gate").Attempts == 6, "foreground cannot click before its quiet period ends");
+                        await Until(() => Field<ResumeGate>(main, "gate").Verified == 7, 8);
+                        Native.POINT pointerAfter; Native.GetCursorPos(out pointerAfter);
+                        Require(pointerBefore.X == pointerAfter.X && pointerBefore.Y == pointerAfter.Y, "foreground recovery uses window messages without moving the real pointer");
                         Console.WriteLine("PASS: workflow uses no keyboard shortcuts or physical mouse input"); code = 0;
                     }
                     catch (Exception e) { Console.Error.WriteLine(e); }

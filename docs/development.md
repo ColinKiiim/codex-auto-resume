@@ -55,3 +55,5 @@
 验证结果及实际覆盖范围见 [validation.md](validation.md)，捕获细节见 [background-mode.md](background-mode.md)。
 
 1.1.10 的 `-UiTests` 覆盖中英即时切换、偏好保存、采样标签宽度以及本轮进度的滚轮/底部跟随/翻阅视口保持。客户端预览输出在临时目录 `CodexAutoResume-ui-zh-CN-100.png`、`CodexAutoResume-ui-en-100.png` 等文件中；不使用 DrawToBitmap 模拟的非客户区评判系统边框。
+
+1.1.11 增加 `RecoveryWindow`（统一 1.5 秒输入让行）、`CaptureWatchdog`（12 秒低频独立核验）、`CaptureComparison`（用户显式导出的本地只读对照）和 `UpdatePrompt`（分语言摘要及焦点）。`-WorkflowTests` 覆盖两种模式的输入门控与前台消息操作，`-BackgroundTests` 覆盖独立会话保留与对照导出，`-UiTests` 输出 `CodexAutoResume-update-zh-CN-100.png`、`CodexAutoResume-update-en-100.png` 等客户端渲染到临时目录。上述测试不能替代受影响实体电脑的实际复验。
