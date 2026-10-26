@@ -120,6 +120,8 @@ namespace CodexAutoResume
             var plan = new ResumeSchedule();
             plan.Arm(now.AddMinutes(1), "original", now, 100, "zone");
             Check(!plan.Allows(now.AddSeconds(30), 130, "original", "zone") && plan.Allows(now.AddMinutes(1), 160, "original", "zone"), "schedule blocks before deadline and allows at deadline without an early action");
+            plan.Observe(ButtonState.Resume, now.AddSeconds(-2)); plan.Observe(ButtonState.Running, now.AddSeconds(-1));
+            Check(plan.Active, "evidence predating schedule creation cannot consume the new plan");
             plan.Observe(ButtonState.Resume, now); plan.Observe(ButtonState.Running, now.AddSeconds(-1));
             Check(plan.Active, "stale running evidence cannot consume a scheduled recovery");
             plan.Observe(ButtonState.Running, now.AddSeconds(1));

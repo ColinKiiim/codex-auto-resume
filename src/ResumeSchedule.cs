@@ -12,13 +12,13 @@ namespace CodexAutoResume
         internal bool Active, Invalid;
         internal DateTime DueUtc;
         internal string TargetKey, Zone;
-        DateTime observedPause, checkedUtc;
+        DateTime observedPause, checkedUtc, armedUtc;
         double checkedClock;
         internal void Arm(DateTime due, string target, DateTime now, double clock, string zone)
         {
             if (due.Kind != DateTimeKind.Utc || due <= now || String.IsNullOrEmpty(target)) throw new ArgumentException("Invalid recovery time or target");
             Active = true; Invalid = false; DueUtc = due; TargetKey = target; Zone = zone;
-            checkedUtc = now; checkedClock = clock; observedPause = DateTime.MinValue;
+            armedUtc = checkedUtc = now; checkedClock = clock; observedPause = DateTime.MinValue;
         }
         internal bool Allows(DateTime now, double clock, string target, string zone)
         {
@@ -29,7 +29,7 @@ namespace CodexAutoResume
         }
         internal void Observe(ButtonState state, DateTime contentAt)
         {
-            if (!Active) return;
+            if (!Active || contentAt < armedUtc) return;
             if (state == ButtonState.Resume || state == ButtonState.Send) observedPause = contentAt;
             if (state == ButtonState.Running && observedPause != DateTime.MinValue && contentAt > observedPause) Cancel();
         }
