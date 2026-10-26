@@ -28,6 +28,7 @@ namespace CodexAutoResume
         readonly Label previewTime = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty, ForeColor = Color.DimGray };
         TableLayoutPanel stateLayout;
         bool questionPreview;
+        DateTime previewContentAt;
         readonly ToolTip tips = new ToolTip();
         Form settingsWindow, activityWindow;
         TextBox activityView;
@@ -100,7 +101,7 @@ namespace CodexAutoResume
             history.Controls.Add(recentLog, 0, 1); history.SetColumnSpan(recentLog, 2); layout.Controls.Add(history, 0, 4);
             recoveryCount.AutoSize = false; recoveryCount.Dock = DockStyle.Fill; recoveryCount.Margin = Padding.Empty; recoveryCount.TextAlign = ContentAlignment.MiddleLeft;
             InitializeUsageFooter(layout); Controls.Add(layout);
-            stabilityTimer.Tick += delegate { if (monitoring && automatic.Checked && lastObservedState == ButtonState.Resume) TickMonitor(); else stabilityTimer.Stop(); };
+            stabilityTimer.Tick += delegate { if (monitoring && automatic.Checked && (lastObservedState == ButtonState.Resume || QuotaSquareWake && lastObservedState == ButtonState.Running)) TickMonitor(); else stabilityTimer.Stop(); };
             questionTimer.Tick += delegate { if (monitoring && questions.Waiting) TickMonitor(); else questionTimer.Stop(); };
             frameTimer.Tick += delegate { DispatchFrame(); };
         }
@@ -109,7 +110,7 @@ namespace CodexAutoResume
         {
             recoveryWindow.Observe(state, DateTime.UtcNow);
             lastObservedState = state;
-            if (monitoring && automatic.Checked && state == ButtonState.Resume) stabilityTimer.Start(); else stabilityTimer.Stop();
+            if (monitoring && automatic.Checked && (state == ButtonState.Resume || QuotaSquareWake && state == ButtonState.Running)) stabilityTimer.Start(); else stabilityTimer.Stop();
         }
         void RecentProgress(string text)
         {
@@ -130,16 +131,17 @@ namespace CodexAutoResume
         }
         void ResetPreview()
         {
+            previewContentAt = DateTime.MinValue;
             Image old = preview.Image; preview.Image = null; if (old != null) old.Dispose();
             recoveryWindow.Reset(); lastObservedState = ButtonState.Unknown;
             SetPreviewKind(false); UiText.Set(previewCaption, "采样图"); previewTime.Text = "";
         }
-        void UpdateQuestionPreview(Bitmap image)
+        void UpdateQuestionPreview(Bitmap image, DateTime contentAt)
         {
             Rectangle bounds = Rectangle.Intersect(new Rectangle(Point.Empty, image.Size), questions.PreviewBounds);
             if (bounds.IsEmpty) return;
             Bitmap cropped = image.Clone(bounds, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
-            Image old = preview.Image; preview.Image = cropped; if (old != null) old.Dispose(); SetPreviewKind(true);
+            Image old = preview.Image; preview.Image = cropped; if (old != null) old.Dispose(); previewContentAt = contentAt; SetPreviewKind(true);
         }
         void ShowPreviewDetail()
         {
@@ -163,7 +165,7 @@ namespace CodexAutoResume
             tips.SetToolTip(targetName, title);
             UiText.Set(modeName, background.Checked ? "后台监测" : "前台监测");
             UiText.Set(recoveryCount, "本轮已恢复 " + gate.Verified + " 次");
-            UiText.Set(previewTime, preview.Image == null ? "" : !monitoring ? "已暂停 · 保留上次取样" : "画面 " + (activity.LastContent == DateTime.MinValue ? "—" : activity.LastContent.ToLocalTime().ToString("HH:mm:ss")) + " · 检查 " + (activity.LastSample == DateTime.MinValue ? "—" : activity.LastSample.ToLocalTime().ToString("HH:mm:ss")));
+            previewTime.Text = preview.Image == null ? "" : previewContentAt == DateTime.MinValue ? "—" : previewContentAt.ToLocalTime().ToString("HH:mm:ss");
         }
 
         void RefreshLanguage()
@@ -248,6 +250,7 @@ namespace CodexAutoResume
             common.Controls.Add(new Label { Text = "后台允许窗口被遮挡；Codex 需保持未最小化\n前台模式需要 Codex 位于前台，按钮可见", AutoSize = true, MaximumSize = new Size(510, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 8, 0, 16) });
             CheckBox checkUpdates = new CheckBox { Text = "自动检查更新", AutoSize = true, Checked = preferences.CheckUpdates };
             checkUpdates.CheckedChanged += delegate { preferences.CheckUpdates = checkUpdates.Checked; nextUpdateCheck = DateTime.UtcNow.AddSeconds(1); SavePreferences(); }; common.Controls.Add(checkUpdates);
+            AddQuotaSettings(common);
             common.Controls.Add(UiLabel("高级定位"));
             Button chooseWindow = UiButton("选择窗口", delegate { ChangeWindow(); }); chooseWindow.Name = "ChooseWindow"; common.Controls.Add(chooseWindow);
             common.Controls.Add(UiButton("选择按钮区域", delegate { RequestRegion(); }));
@@ -347,7 +350,7 @@ namespace CodexAutoResume
         }
         void ObserveStatus(ButtonState state)
         {
-            SetStatus(state == ButtonState.Running ? "Codex 正在运行" : state == ButtonState.Resume ? "检测到暂停" : state == ButtonState.Send ? "等待发送" : state == ButtonState.Voice ? "等待操作" : "正在识别 Codex");
+            SetStatus(state == ButtonState.Running ? "Codex 正在运行" : state == ButtonState.Resume ? "检测到暂停" : state == ButtonState.Send ? "等待发送" : state == ButtonState.VoiceClose ? "语音模式 · 等待操作" : state == ButtonState.Voice ? "等待操作" : "正在识别 Codex");
         }
         void RecordVerified(int previous)
         { if (gate.Verified > previous) AppendVisible("已恢复", "recovery"); RefreshUi(); }

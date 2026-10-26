@@ -11,6 +11,7 @@ namespace CodexAutoResume
     {
         [STAThread] public static int Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--composer-worker") return ComposerWorker.Run();
             DesktopIdentity.Initialize();
             Native.SetDpi();
             Application.EnableVisualStyles();
@@ -143,7 +144,7 @@ namespace CodexAutoResume
                 gate = new ResumeGate(); lastBadge = Rectangle.Empty;
                 SetStatus("备用手动标定成功；正在观察。按 " + shortcut + "+F8 可切回自动定位。");
                 Rectangle r; string reason;
-                if (target.Locate(recognizer, null, out r, out reason)) using (Bitmap b = Native.Capture(r)) UpdatePreview(b, recognizer.Classify(b));
+                if (target.Locate(recognizer, null, out r, out reason)) using (Bitmap b = Native.Capture(r)) { UpdatePreview(b, recognizer.Classify(b)); previewContentAt = DateTime.UtcNow; }
                 monitoring = true; toggle.Text = "暂停";
             }
             catch (Exception e) { target = null; SetStatus("标定失败：" + e.Message); }
@@ -163,6 +164,7 @@ namespace CodexAutoResume
         }
         void Connect(Target connected)
         {
+            CancelQuota();
             questions.Reset(); questionReported = false; nextMonitor = DateTime.MinValue;
             regionChoiceRequested = false; recoveryWindow.Reset(); captureWatchdog.Reset(); activity.ResetSource(); ResetPreview(); lastObservedContent = -1;
             generation++; target = connected; gate = new ResumeGate(); lastBadge = Rectangle.Empty;
@@ -172,6 +174,7 @@ namespace CodexAutoResume
         void ActivateOptions(string message)
         {
             if (diagnosing) return;
+            CancelQuota();
             recoveryWindow.Reset(); generation++; gate.BreakStreak();
             WatchResume(lastObservedState);
             questions.Reset(); nextMonitor = DateTime.MinValue;
@@ -217,6 +220,7 @@ namespace CodexAutoResume
         }
         void Stop(string message)
         {
+            CancelQuota();
             if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             WindowCapture.StopCapture();
             stabilityTimer.Stop();
@@ -230,9 +234,10 @@ namespace CodexAutoResume
         async void TickMonitor()
         {
             if (!monitoring || updating || diagnosing || DateTime.UtcNow < nextMonitor) return;
+            if (!QuotaSampleDue()) return;
             if (target == null)
             { updating = true; try { Discover(); } catch (Exception e) { SetStatus("窗口检测暂不可用，继续等待：" + e.Message); } finally { updating = false; } return; }
-            if (!Native.IsWindow(target.Window)) { generation++; target = null; ResetPreview(); waitingForChoice = false; nextDiscovery = DateTime.MinValue; WindowCapture.StopCapture(); SetStatus("正在寻找 Codex"); return; }
+            if (!Native.IsWindow(target.Window)) { CancelQuota(); generation++; target = null; ResetPreview(); waitingForChoice = false; nextDiscovery = DateTime.MinValue; WindowCapture.StopCapture(); SetStatus("正在寻找 Codex"); return; }
             if (background.Checked) { TickBackground(); return; }
             updating = true;
             Target connected = target; int revision = generation;
@@ -244,6 +249,7 @@ namespace CodexAutoResume
                 activity.Start(DateTime.UtcNow);
                 if (!target.Locate(recognizer, regionChoiceRequested ? (Func<Bitmap, System.Collections.Generic.List<LocatedButton>, int>)ChooseRegion : null, out crop, out reason))
                 {
+                    quotaQuiet.Reset();
                     if (!monitoring || target != connected || generation != revision) return;
                     if (reason == "正在自动寻找蓝色圆按钮；找不到时可用手动标定备用" || reason == "候选区域需要用户确认") activity.Foreground(DateTime.UtcNow);
                     recoveryWindow.Reset(); gate.BreakStreak();
@@ -256,7 +262,7 @@ namespace CodexAutoResume
                     return;
                 }
                 Detection d;
-                using (Bitmap b = Native.Capture(crop)) { d = recognizer.Classify(b); UpdatePreview(b, d); }
+                using (Bitmap b = Native.Capture(crop)) { d = recognizer.Classify(b); UpdatePreview(b, d); previewContentAt = DateTime.UtcNow; }
                 activity.Foreground(DateTime.UtcNow); activity.Recognized(d.State);
                 Rectangle badgeScreen = d.ButtonBounds; badgeScreen.Offset(crop.Location);
                 if (!d.ButtonBounds.IsEmpty && !lastBadge.IsEmpty &&
@@ -265,6 +271,7 @@ namespace CodexAutoResume
                 int previousVerified = gate.Verified;
                 bool ready = gate.Observe(d.State, DateTime.UtcNow); RecordVerified(previousVerified);
                 RefreshScores(d);
+                if (await HandleQuota(connected, revision, d, crop, activity.LastContent)) return;
                 if (gate.AwaitingRunning) { SetStatus("已点击一次，等待白色方块确认运行中…"); return; }
                 if (!ready)
                 {
@@ -277,7 +284,7 @@ namespace CodexAutoResume
                 Point center = new Point(crop.Left + d.ButtonBounds.Left + d.ButtonBounds.Width / 2, crop.Top + d.ButtonBounds.Top + d.ButtonBounds.Height / 2);
                 bool clicked = BackgroundClick.Send(target.Window, WindowCapture.Bounds(target.Window), center, delegate
                 {
-                    if (!recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow)) return false;
+                    if (!QuotaAllowsNormal() || !recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow)) return false;
                     Rectangle fresh; string why;
                     if (!target.Locate(recognizer, null, out fresh, out why) || fresh != crop) return false;
                     using (Bitmap b = Native.Capture(fresh))
@@ -298,6 +305,7 @@ namespace CodexAutoResume
 
         void CandidateWait()
         {
+            quotaQuiet.Reset();
             recoveryWindow.Reset(); stabilityTimer.Stop();
             gate.BreakStreak(); gate.Observe(ButtonState.Unknown, DateTime.UtcNow);
             int count = target == null ? -1 : target.CandidateCount;
@@ -349,7 +357,7 @@ namespace CodexAutoResume
                 if (questionReported) { questionReported = false; scores.Text = "问答面板已消失，恢复正常图标检测"; SetStatus("问答面板已消失，恢复正常图标检测"); }
                 return false;
             }
-            recoveryWindow.Reset(); questionReported = true;
+            quotaQuiet.Reset(); recoveryWindow.Reset(); questionReported = true;
             stabilityTimer.Stop();
             activity.LastIcon = "等待用户回答";
             questionTimer.Start();
@@ -365,13 +373,15 @@ namespace CodexAutoResume
             Native.RECT rect;
             if (!Native.GetWindowRect(connected.Window, out rect) || !SystemInformation.VirtualScreen.Contains(rect.Rectangle)) return false;
             bool waiting;
-            using (Bitmap image = Native.Capture(rect.Rectangle)) { waiting = await questions.CheckAsync(image); if (monitoring && target == connected && generation == revision && waiting) UpdateQuestionPreview(image); }
+            DateTime capturedAt = DateTime.UtcNow;
+            using (Bitmap image = Native.Capture(rect.Rectangle)) { waiting = await questions.CheckAsync(image); if (monitoring && target == connected && generation == revision && waiting) UpdateQuestionPreview(image, capturedAt); }
             if (!monitoring || target != connected || generation != revision) return false;
             return RecordQuestion(waiting);
         }
 
         void BackgroundWait(string reason)
         {
+            quotaQuiet.Reset();
             recoveryWindow.Reset(); stabilityTimer.Stop();
             gate.BreakStreak(); gate.ObserveCaptured(ButtonState.Unknown, DateTime.UtcNow, DateTime.MinValue);
             if (reason == "候选区域需要用户确认") CandidateWait();
@@ -407,7 +417,7 @@ namespace CodexAutoResume
                 {
                     if (!Current(connected, revision)) return;
                     bool changed = frame.ContentSequence != lastObservedContent;
-                    if (!changed && !regionChoiceRequested && lastObservedState != ButtonState.Resume)
+                    if (!changed && !regionChoiceRequested && lastObservedState != ButtonState.Resume && !QuotaEnabled)
                     {
                         // Silence is normal: retain the last observation without
                         // re-running OCR or promoting cached pixels to new proof.
@@ -418,7 +428,7 @@ namespace CodexAutoResume
                     {
                         bool waiting = await questions.CheckAsync(frame.Image);
                         if (!Current(connected, revision)) return;
-                        if (waiting) UpdateQuestionPreview(frame.Image);
+                        if (waiting) UpdateQuestionPreview(frame.Image, frame.ContentAt);
                         if (RecordQuestion(waiting)) return;
                     }
                     Rectangle crop;
@@ -429,7 +439,7 @@ namespace CodexAutoResume
                         {
                             bool waiting = await questions.CheckAsync(frame.Image);
                             if (!Current(connected, revision)) return;
-                            if (waiting) UpdateQuestionPreview(frame.Image);
+                            if (waiting) UpdateQuestionPreview(frame.Image, frame.ContentAt);
                             if (RecordQuestion(waiting)) return;
                         }
                         BackgroundWait(reason); return;
@@ -437,7 +447,7 @@ namespace CodexAutoResume
                     Rectangle local = crop; local.Offset(-frame.Bounds.X, -frame.Bounds.Y);
                     Detection d;
                     using (Bitmap b = frame.Image.Clone(local, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
-                    { d = recognizer.Classify(b); UpdatePreview(b, d); }
+                    { d = recognizer.Classify(b); UpdatePreview(b, d); previewContentAt = frame.ContentAt; }
                     activity.Recognized(d.State); lastObservedContent = frame.ContentSequence; lastObservedState = d.State;
                     if (frame.Source == "independent") journal.Write("diagnostics.log", "capture-probe-result", "state=" + d.State + "; pixels=" + captureWatchdog.LastSignature + "; crop=" + crop + "; sequence=" + frame.ContentSequence, DateTime.UtcNow);
                     Rectangle badge = d.ButtonBounds; badge.Offset(crop.Location);
@@ -446,6 +456,7 @@ namespace CodexAutoResume
                     int previousVerified = gate.Verified;
                     bool ready = gate.ObserveCaptured(d.State, DateTime.UtcNow, frame.ContentAt); RecordVerified(previousVerified);
                     RefreshScores(d);
+                    if (await HandleQuota(connected, revision, d, crop, frame.ContentAt)) return;
                     if (gate.AwaitingRunning) { SetStatus("后台操作已投递一次，等待新捕获帧中的白色方块…"); return; }
                     if (!ready)
                     { ObserveStatus(d.State); return; }
@@ -456,7 +467,7 @@ namespace CodexAutoResume
                     // the triangle has been sitting still for a long time.
                     using (WindowFrame fresh = await ReadBackground(connected, revision, true))
                     {
-                        if (!Current(connected, revision) || !automatic.Checked) return;
+                        if (!Current(connected, revision) || !automatic.Checked || !QuotaAllowsNormal()) return;
                         Rectangle freshCrop;
                         if (!fresh.NewerEvidenceThan(frame) || !connected.LocateBackground(fresh, recognizer, null, out freshCrop, out reason) || freshCrop != crop)
                         { BackgroundWait("后台点击前位置变化，等待重新定位"); return; }
@@ -467,14 +478,14 @@ namespace CodexAutoResume
                         { BackgroundWait("后台点击前图标变化，已取消本次点击"); return; }
                         Point center = new Point(freshCrop.Left + again.ButtonBounds.Left + again.ButtonBounds.Width / 2, freshCrop.Top + again.ButtonBounds.Top + again.ButtonBounds.Height / 2);
                         bool sent = BackgroundClick.Send(connected.Window, fresh.Bounds, center, delegate
-                        { string why; return Current(connected, revision) && automatic.Checked && recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow) && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
+                        { string why; return Current(connected, revision) && automatic.Checked && QuotaAllowsNormal() && recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow) && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
                         if (sent) { gate.MarkAttempt(DateTime.UtcNow); RefreshScores(d); SetStatus("后台操作已投递：" + BackgroundClick.LastRoute + "；等待方块确认，尚不计为成功"); }
                         else BackgroundWait("后台点击前窗口状态变化，已取消本次点击");
                     }
                 }
             }
             catch (Exception e) { if (Current(connected, revision)) BackgroundWait("暂时无法捕获或点击，继续监测：" + e.Message); }
-            finally { updating = false; }
+            finally { if (QuotaEnabled && quotaPause.Phase == QuotaPhase.Waiting && QuotaNow != QuotaLevel.Healthy) WindowCapture.StopCapture(); updating = false; }
         }
         void UpdatePreview(Bitmap b, Detection d)
         {
@@ -571,6 +582,7 @@ namespace CodexAutoResume
         }
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            CancelQuota();
             monitoring = false; generation++;
             if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             lifetime.Cancel(); WindowCapture.FrameAvailable -= OnCaptureFrame;
@@ -621,7 +633,7 @@ namespace CodexAutoResume
             choices.Controls.Add(move);
             Label guide = new Label { Dock = DockStyle.Top, Height = 90, Text = "演示已自动连接，无需快捷键。\n在主窗口勾选允许自动点击即可开始。\n后台模式可切到其他应用，完全盖住此窗口。\n三角形恢复后变为方块，计数只增加一次。" };
             icon.Location = new Point(630, 320); icon.Size = new Size(64, 64); icon.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
-            icon.Click += delegate { clicks++; UiText.Set(count, "按钮收到的点击：" + clicks); icon.State = "方块"; icon.Invalidate(); };
+            icon.Click += delegate { clicks++; UiText.Set(count, "按钮收到的点击：" + clicks); icon.State = icon.State == "方块" ? "三角形" : "方块"; icon.Invalidate(); };
             Controls.Add(second); Controls.Add(icon); Controls.Add(count); Controls.Add(guide); Controls.Add(choices);
             Shown += delegate { UiText.Apply(this); };
         }

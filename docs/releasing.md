@@ -4,7 +4,7 @@
 
 ## 版本规则
 
-默认使用 **1.1.x**，每次正式更新只递增补丁号；当前为 1.1.12，下一版通常为 1.1.13。新增功能、界面调整、重构或文档发布都不自动提升次版本。
+默认使用 **1.1.x**，每次正式更新只递增补丁号；当前版本以根目录 VERSION 为准，下一版通常递增一个补丁号。新增功能、界面调整、重构或文档发布都不自动提升次版本。
 
 只有维护者明确允许后，才能进入 1.2.x 或其他系列。AI 可以提出升级建议，但“继续工作”“迭代”“发布”等一般指令不代表同意升次版本，也不能由 AI 修改规则来自行批准。
 
@@ -74,6 +74,6 @@ Get-FileHash .\CodexAutoResume-v1.1.7-windows-x64.exe -Algorithm SHA256
 
 ## 检查与源码范围
 
-`tests/release-pipeline.ps1` 在临时目录检查版本对应、完整性、历史保护、最新入口、发布锁和源码包。它需要本地 v1.1.4、v1.1.3 的发布附件。后台输入改动另运行 `tests/background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe`。
+`tests/release-pipeline.ps1` 使用当前候选 EXE 和临时源码夹具检查版本对应、完整性、历史保护、最新入口和下载附件校验，不依赖旧版发布附件。后台捕获/消息点击改动另运行 `tests/background-portable.ps1 -ExecutablePath release/CodexAutoResume.exe`；真实输入验证范围单独记录，不能用自带按钮自测替代。
 
 源仓库保留源码、文档、资源、构建脚本和模板；`dist/`、`release/`、`packages/` 由 `.gitignore` 排除，生成的 Assets 单独上传到 GitHub Releases。

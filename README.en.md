@@ -4,7 +4,21 @@
 
 [简体中文](README.md) · [Troubleshooting](docs/troubleshooting.en.md) · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
-**Codex keeps showing “at capacity”, then waits for you to click Resume?** CodexAutoResume is a portable Windows utility that watches the Codex desktop composer, recognizes the right-pointing resume triangle, clicks it after stability checks, and confirms the running square. One EXE, no API key.
+**Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. Compact footer bars also show the current login's remaining quota and reset times. One EXE, no API key.
+
+> Version 1.1.14 includes opt-in experimental quota control. Real Codex pause/input and cross-device acceptance remain incomplete; an unverifiable original conversation waits for manual handling. See the [version notes](docs/releases/v1.1.14.md) for tested scope and limitations.
+
+## Pause on low quota, continue after recovery (experimental)
+
+Compact footer bars read the current local login about every 10 seconds. Hover for precise local 5h / weekly reset times. No account import or token manager is required. Quota control is in Settings, off by default, and also requires Auto-resume in the main window.
+
+Select 5h, weekly, or both and a remaining-percentage threshold (default 10%). Any selected quota at or below the threshold triggers an attempt to verify the conversation and pause the running square. While waiting, screen sampling drops to once a minute; quota queries remain independent. All selected quotas must rise above the threshold before continuing. A freshly verified resume triangle in the original conversation takes priority. If it disappears, the helper may submit a customizable continuation to that verified conversation's empty editor. The default Chinese text asks Codex to continue from the interruption point.
+
+Input first tries an already available local debugging endpoint, then Windows UI Automation with foreground focus. It never enables debugging or restarts Codex automatically. Unverifiable conversations, unsupported interfaces, Windows activation denial, existing drafts/attachments/questions/voice mode, or uncertain input outcomes require manual handling; there is no repeated submission. Integration with the current local Codex build still needs real-app validation; see the [stage-two record](docs/history/2026-10-26-stage-two.md).
+
+**An early reset for all users is a target scenario.** If actual quota recovers before the previous countdown, CAR uses that fresh quota instead of waiting for the old reset time. This includes the Tibo-wide-reset scenario requested by the user. Polling normally takes about 10 seconds; network delays, failure backoff, input protection and UI availability can delay continuation. An earlier request reduces idle time, but the server determines when the weekly window starts. CAR cannot control that timer or promise instant continuation.
+
+Changing quota settings or continuation text cancels the old transaction; if CAR already paused the task, changing settings also disables Auto-resume to prevent an unexpected continuation. A detected manual continuation cancels that pause cycle until quota recovers and rearms it. Pausing monitoring, changing targets or restarting never replays an old continuation. Outstanding real-app integration and device checks remain in [TODO](TODO.md).
 
 It helps when an interrupted task exposes a resume button. It does not change server capacity, account quotas, or model availability. Detection is based on button graphics, not the text or cause of an error.
 
@@ -13,10 +27,10 @@ It helps when an interrupted task exposes a resume button. It does not change se
 | What you see | What to do |
 |---|---|
 | Paused task with a right-pointing resume triangle | Enable automatic clicking to resume when the button is recognized |
-| Usage limit or a reset time | Check your account usage; clicking cannot add quota |
+| Usage limit or a reset time | Check footer bars and precise reset times; opt-in experimental quota control is available, but clicks cannot add quota |
 | Persistent service errors without a resume button | Follow the client message and check service status |
 | A question, permission request, or choice | Review it yourself; this utility does not answer or approve |
-| Running square, send arrow, or voice waveform | The utility observes without clicking |
+| Running square, send arrow, or voice waveform | Ordinary auto-resume observes; quota actions require this cycle's verified original conversation |
 
 See the [at capacity / atcapacity FAQ](docs/troubleshooting.en.md) for troubleshooting and supported scenarios.
 
@@ -35,8 +49,9 @@ Source builds also create `release/CodexAutoResume.exe`. Download the executable
 ## Behavior
 
 - **Resume triangle:** wait at least 1.5 seconds after detection and 1.5 seconds without mouse/keyboard input; new input restarts the quiet period. Both modes use window messages without moving the pointer. Independent pre-click evidence and a five-second attempt interval remain.
-- **Running square:** observation and confirmation of a successful resume.
-- **Send arrow / voice waveform:** observation only.
+- **Running square:** confirms a resume; experimental quota control may pause it when selected quota is low and the original conversation can be verified.
+- **Send arrow:** ordinary auto-resume observes; only the owned quota-recovery cycle may submit a continuation to a verified empty editor.
+- **Voice waveform / close cross:** the buttons themselves are observed, never clicked automatically.
 - **Question panel:** records the waiting state and waits for user input.
 - **Blue citation numbers / unknown graphics:** excluded from automatic button candidates.
 - **Multiple genuine buttons:** keeps scanning; resumes automatically when one remains, or lets you choose a region manually.
@@ -65,11 +80,11 @@ The current implementation targets the Codex desktop window on Windows x64. It i
 
 ### Can it show remaining Codex usage?
 
-The footer shows compact quota bars for the current local Codex login. Click for account/source details, reset times and refresh. It reuses the target installation's bundled App Server and does not import accounts or manage tokens. A missing or unsupported component leaves auto-resume available. Custom login environments and another physical PC still require verification; see the [usage guide](docs/user-guide.md).
+The footer normally refreshes about every 10 seconds. Hover for precise reset times, or click for account/source details and refresh. It reuses the target installation's bundled App Server without importing accounts or managing tokens. Missing quota leaves ordinary auto-resume available when quota control is off; enabling quota control requires valid usage before actions. Custom login environments and another physical PC still require verification; see the [usage guide](docs/user-guide.md).
 
 ### Does it send messages or approve requests?
 
-Only a strictly recognized resume triangle triggers a click. Running, send, voice, and question states do not trigger clicks. Automatic clicking is off at startup.
+Ordinary auto-resume clicks only a strictly recognized resume triangle. Opt-in experimental quota control can pause a verified running conversation and, within its own recovery cycle, submit a customizable continuation to a verified empty editor. Drafts, unverifiable contexts and uncertain outcomes require manual handling. It never answers questions or approves permissions. Ordinary startup observes without clicking.
 
 ### How can I report a detection problem?
 

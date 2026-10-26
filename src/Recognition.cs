@@ -8,12 +8,12 @@ using System.Runtime.InteropServices;
 
 namespace CodexAutoResume
 {
-    public enum ButtonState { Unknown, Resume, Running, Send, Voice }
+    public enum ButtonState { Unknown, Resume, Running, Send, Voice, VoiceClose }
 
     public sealed class Detection
     {
         public ButtonState State;
-        public double ResumeScore, RunningScore, SendScore, VoiceScore;
+        public double ResumeScore, RunningScore, SendScore, VoiceScore, VoiceCloseScore;
         public int IconParts;
         public Rectangle ButtonBounds;
         public string Detail;
@@ -35,7 +35,7 @@ namespace CodexAutoResume
     public sealed class Recognizer
     {
         const int Grid = 32;
-        readonly bool[] resumeTemplate, runningTemplate, sendTemplate, sendCurrentTemplate, voiceTemplate;
+        readonly bool[] resumeTemplate, runningTemplate, sendTemplate, sendCurrentTemplate, voiceTemplate, voiceCloseTemplate;
         public Recognizer()
         {
             resumeTemplate = LoadTemplate("resume-reference.png");
@@ -43,6 +43,7 @@ namespace CodexAutoResume
             sendTemplate = LoadTemplate("send-reference.png");
             sendCurrentTemplate = LoadTemplate("send-current-reference.png");
             voiceTemplate = LoadTemplate("voice-reference.png");
+            voiceCloseTemplate = LoadTemplate("voice-close-reference.png");
         }
 
         static bool[] LoadTemplate(string name)
@@ -84,8 +85,11 @@ namespace CodexAutoResume
             if (shape == null) return d;
             d.SendScore = parts <= 2 ? Math.Max(StrokeSimilarity(shape, sendTemplate), StrokeSimilarity(shape, sendCurrentTemplate)) : 0;
             d.VoiceScore = parts >= 3 && VoiceStrokes(shape) ? StrokeSimilarity(shape, voiceTemplate) : 0;
+            d.VoiceCloseScore = parts == 1 ? StrokeSimilarity(shape, voiceCloseTemplate) : 0;
             double other = Math.Max(Similarity(shape, resumeTemplate), Similarity(shape, runningTemplate));
-            if (parts <= 2 && TopFraction(shape) < .50 && d.SendScore >= .80 && d.SendScore - Math.Max(other, d.VoiceScore) >= .12) d.State = ButtonState.Send;
+            if (parts == 1 && d.VoiceCloseScore >= .88 && d.VoiceCloseScore - Math.Max(other, Math.Max(d.SendScore, d.VoiceScore)) >= .12)
+            { d.State = ButtonState.VoiceClose; d.Detail += String.Format("; auxiliary voice-close {0:F3}", d.VoiceCloseScore); }
+            else if (parts <= 2 && TopFraction(shape) < .50 && d.SendScore >= .80 && d.SendScore - Math.Max(other, d.VoiceScore) >= .12) d.State = ButtonState.Send;
             else if (parts >= 3 && parts <= 6 && d.VoiceScore >= .80 && d.VoiceScore - Math.Max(other, d.SendScore) >= .12) d.State = ButtonState.Voice;
             return d;
         }
@@ -112,6 +116,7 @@ namespace CodexAutoResume
             }
             finally { image.UnlockBits(data); }
             List<LocatedButton> found = new List<LocatedButton>();
+            List<LocatedButton> auxiliary = new List<LocatedButton>();
             foreach (Component component in Components(blue))
             {
                 Rectangle badge = component.Bounds;
@@ -129,9 +134,13 @@ namespace CodexAutoResume
                     // icons may enter automatic selection; unknown crops remain observable
                     // through manual calibration without blocking a real button.
                     if (detection.State == ButtonState.Unknown || detection.ButtonBounds.IsEmpty || detection.IconParts == 0) continue;
-                    found.Add(new LocatedButton { Crop = crop, Badge = badge, Detection = detection });
+                    var candidate = new LocatedButton { Crop = crop, Badge = badge, Detection = detection };
+                    if (detection.State == ButtonState.VoiceClose) auxiliary.Add(candidate); else found.Add(candidate);
                 }
             }
+            // A voice close icon is observable only when no primary button exists.
+            // It must not make an otherwise unique resume candidate ambiguous.
+            if (found.Count == 0) found = auxiliary;
             found.Sort(delegate(LocatedButton a, LocatedButton b) { int byY = a.Badge.Y.CompareTo(b.Badge.Y); return byY == 0 ? a.Badge.X.CompareTo(b.Badge.X) : byY; });
             return found;
         }

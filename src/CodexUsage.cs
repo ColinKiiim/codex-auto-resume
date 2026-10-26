@@ -219,7 +219,7 @@ namespace CodexAutoResume
                 if (requestMethod.Length > 0)
                 {
                     if (responseId != null) await Send(new { id = responseId, error = new { code = -32601, message = "Read-only usage client" } }).ConfigureAwait(false);
-                    if (TrackAccountChanges && requestMethod == "account/updated") throw new UsageChangedException();
+                    if (TrackAccountChanges && requestMethod == "account/updated") throw new UsageNotificationException();
                     continue;
                 }
                 if (UsageJson.Number(responseId) != id) continue;
@@ -237,7 +237,8 @@ namespace CodexAutoResume
         }
     }
 
-    internal sealed class UsageChangedException : Exception { }
+    internal class UsageChangedException : Exception { }
+    internal sealed class UsageNotificationException : UsageChangedException { }
 
     internal static class CodexUsage
     {
@@ -262,21 +263,41 @@ namespace CodexAutoResume
                         if (!String.Equals(Path.GetFullPath(actualHome).TrimEnd('\\'), source.Home.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                             throw new UsageChangedException();
                         await rpc.Send(new { method = "initialized", @params = new { } }).ConfigureAwait(false);
-                        result.Stage = "account";
-                        object first = UsageJson.Get(await rpc.Request("account/read", new { refreshToken = false }, timeout.Token).ConfigureAwait(false), "account");
-                        if (first == null) { result.Error = UsageError.NotSignedIn; return result; }
-                        if (UsageJson.Text(first, "type") != "chatgpt") { result.Error = UsageError.UnsupportedAuth; return result; }
-                        result.AccountKey = UsageJson.Identity(first);
-                        if (String.IsNullOrEmpty(UsageJson.Text(first, "email")) && String.IsNullOrEmpty(UsageJson.Text(first, "id"))) throw new UsageChangedException();
-                        rpc.TrackAccountChanges = true; result.Stage = "limits";
-                        object limits = await rpc.Request("account/rateLimits/read", null, timeout.Token).ConfigureAwait(false);
-                        result.Stage = "recheck";
-                        object last = UsageJson.Get(await rpc.Request("account/read", new { refreshToken = false }, timeout.Token).ConfigureAwait(false), "account");
-                        timeout.Token.ThrowIfCancellationRequested();
-                        if (UsageJson.Identity(last) != result.AccountKey || source.AuthStamp() != stamp) throw new UsageChangedException();
-                        result.Stage = "parse"; var snapshot = UsageJson.Parse(limits, last);
-                        snapshot.Home = source.Home; snapshot.Executable = source.Executable;
-                        result.Snapshot = snapshot;
+                        string initialAccount = null;
+                        for (int epoch = 0; epoch < 2; epoch++)
+                        {
+                            try
+                            {
+                                if (source.AuthStamp() != stamp) throw new UsageChangedException();
+                                result.Stage = "account";
+                                object first = UsageJson.Get(await rpc.Request("account/read", new { refreshToken = false }, timeout.Token).ConfigureAwait(false), "account");
+                                if (first == null) { result.Error = UsageError.NotSignedIn; return result; }
+                                if (UsageJson.Text(first, "type") != "chatgpt") { result.Error = UsageError.UnsupportedAuth; return result; }
+                                result.AccountKey = UsageJson.Identity(first);
+                                if (initialAccount == null) initialAccount = result.AccountKey;
+                                else if (result.AccountKey != initialAccount) throw new UsageChangedException();
+                                if (String.IsNullOrEmpty(UsageJson.Text(first, "email")) && String.IsNullOrEmpty(UsageJson.Text(first, "id"))) throw new UsageChangedException();
+                                rpc.TrackAccountChanges = true; result.Stage = "limits";
+                                object limits = await rpc.Request("account/rateLimits/read", null, timeout.Token).ConfigureAwait(false);
+                                result.Stage = "recheck";
+                                object last = UsageJson.Get(await rpc.Request("account/read", new { refreshToken = false }, timeout.Token).ConfigureAwait(false), "account");
+                                timeout.Token.ThrowIfCancellationRequested();
+                                if (UsageJson.Identity(last) != result.AccountKey || source.AuthStamp() != stamp) throw new UsageChangedException();
+                                result.Stage = "parse"; var snapshot = UsageJson.Parse(limits, last);
+                                snapshot.Home = source.Home; snapshot.Executable = source.Executable;
+                                result.Snapshot = snapshot; break;
+                            }
+                            catch (UsageNotificationException)
+                            {
+                                if (epoch != 0) throw;
+                                // A startup account/updated can arrive after the
+                                // first account reply. Discard that entire epoch
+                                // and any outstanding limits reply; never reuse
+                                // it or ignore the notification. Re-read account,
+                                // limits and account once on the same channel.
+                                rpc.TrackAccountChanges = false; result.AccountKey = null;
+                            }
+                        }
                     }
                 }
                 catch (UsageChangedException) { result.Error = UsageError.Changed; }

@@ -35,11 +35,11 @@ Minimized targets wait until restored. Lock-screen operation is not a supported 
 
 ## Why is the running square unchanged for a long time?
 
-The compact window keeps the last observation during normal static periods without an age-based warning. Four timestamped progress entries, refreshed every ten seconds, show that checks continue. Detailed diagnostic logs continue every 10 seconds. Sampling counts and native-frame times are available in Settings → Diagnostics. Reading cached pixels does not create new evidence: a fresh independent acquisition is required before clicking, and a post-click square frame is required for confirmation.
+The compact window keeps the last observation during normal static periods without an age-based warning. Scrollable timestamped progress entries, refreshed every ten seconds, show that checks continue. Detailed diagnostic logs continue every 10 seconds. Sampling counts and native-frame times are available in Settings → Diagnostics. Reading cached pixels does not create new evidence: a fresh independent acquisition is required before clicking, and a post-click square frame is required for confirmation. During an owned experimental quota pause, screen sampling is reduced to once a minute.
 
 ## Can citations, send arrows, or question panels trigger clicks?
 
-Blue numeric citation badges and unknown glyphs are excluded from automatic candidates. Version 1.1.7 includes 1,800 numeric font/weight/scale cases. Send arrows, voice waveforms, running squares, and question panels do not trigger resume clicks. Answers, submissions, and permission approvals remain with the user.
+Blue numeric citation badges and unknown glyphs are excluded from automatic candidates. Version 1.1.7 included 1,800 numeric font/weight/scale cases. Ordinary auto-resume does not click send arrows, voice controls, running squares or question panels. Version 1.1.14 adds off-by-default experimental quota control: only a verified owned cycle may pause a running square or submit a continuation to an empty editor; unsupported contexts wait. Answers and permission approvals always remain with the user.
 
 If multiple genuine candidates remain, scanning continues. When one remains, normal monitoring resumes automatically. Manual region selection is available.
 

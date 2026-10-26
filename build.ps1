@@ -20,13 +20,18 @@ $sources = @($sources) + @($generatedVersion)
 $commonArgs = @('/nologo', '/optimize+', '/platform:x64', '/utf8output', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', ('/win32manifest:' + $generatedManifest))
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Graphics.winmd')
 $commonArgs += @('/reference:System.Net.Http.dll', '/reference:System.Web.Extensions.dll')
+$commonArgs += '/reference:System.Management.dll'
+foreach ($frameworkAssembly in @('UIAutomationClient', 'UIAutomationTypes', 'WindowsBase')) {
+    $frameworkPath = Get-ChildItem -LiteralPath (Join-Path $env:WINDIR ('Microsoft.NET\assembly\GAC_MSIL\' + $frameworkAssembly)) -Filter ($frameworkAssembly + '.dll') -Recurse | Select-Object -First 1
+    $commonArgs += '/reference:' + $frameworkPath.FullName
+}
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Foundation.winmd')
 foreach ($metadata in @('Windows.Media', 'Windows.Storage', 'Windows.Globalization')) { $commonArgs += '/reference:' + (Join-Path $env:WINDIR ('System32\WinMetadata\' + $metadata + '.winmd')) }
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll')
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\System.Runtime.InteropServices.WindowsRuntime.dll')
 $runtimeFacade = Get-ChildItem -LiteralPath (Join-Path $env:WINDIR 'Microsoft.NET\assembly\GAC_MSIL\System.Runtime') -Filter System.Runtime.dll -Recurse | Select-Object -First 1
 $commonArgs += '/reference:' + $runtimeFacade.FullName
-foreach ($sampleName in @('resume', 'running', 'send', 'send-current', 'voice')) {
+foreach ($sampleName in @('resume', 'running', 'send', 'send-current', 'voice', 'voice-close')) {
     $resourceName = $sampleName + '-reference.png'
     $commonArgs += '/resource:' + (Join-Path $projectRoot ('assets\' + $resourceName)) + ',' + $resourceName
 }

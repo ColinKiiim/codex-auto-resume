@@ -12,21 +12,39 @@ namespace CodexAutoResume
         internal UsageSnapshot Snapshot;
         internal string Message = "额度未连接";
         internal bool Stale;
+        readonly System.Windows.Forms.Timer clickTimer = new System.Windows.Forms.Timer { Interval = 20 };
+        bool keyboardFocus;
+        int clickedAt;
         internal UsageSummary()
         {
             Name = "UsageSummary"; FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
             Text = ""; AccessibleName = "额度详情"; Cursor = Cursors.Hand; Margin = Padding.Empty;
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            clickTimer.Tick += delegate { if (unchecked(Environment.TickCount - clickedAt) >= 180) clickTimer.Stop(); Invalidate(); };
         }
+        protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+        protected override void Select(bool directed, bool forward)
+        { if (directed) keyboardFocus = true; base.Select(directed, forward); }
+        protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); keyboardFocus = false; Invalidate(); }
+        protected override void OnKeyDown(KeyEventArgs e) { keyboardFocus = true; base.OnKeyDown(e); Invalidate(); }
+        protected override void OnClick(EventArgs e)
+        { clickedAt = Environment.TickCount; clickTimer.Start(); Invalidate(); base.OnClick(e); }
+        protected override void Dispose(bool disposing) { if (disposing) clickTimer.Dispose(); base.Dispose(disposing); }
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(BackColor);
+            if (clickTimer.Enabled)
+            {
+                int age = Math.Max(0, unchecked(Environment.TickCount - clickedAt));
+                int alpha = Math.Max(0, 32 * (180 - age) / 180);
+                using (var pulse = new SolidBrush(Color.FromArgb(alpha, Color.DodgerBlue))) e.Graphics.FillRectangle(pulse, ClientRectangle);
+            }
             float scale = Math.Max(1, Font.Height / 14f);
             var windows = Snapshot == null ? new UsageWindow[0] : Snapshot.Windows.Take(2).ToArray();
             if (windows.Length == 0)
             {
                 TextRenderer.DrawText(e.Graphics, Message, Font, ClientRectangle, ForeColor, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-                if (Focused) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -1, -1));
+                if (Focused && keyboardFocus) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -1, -1));
                 return;
             }
             string prefix = Stale ? (UiText.English ? "Old" : "旧数据") : (UiText.English ? "Left" : "剩余");
@@ -48,7 +66,7 @@ namespace CodexAutoResume
                         e.Graphics.FillRectangle(fill, x, middle - thickness / 2, (float)(barWidth * window.Remaining.Value / 100), thickness);
                 x += barWidth + spacing / 2; Draw(e.Graphics, window.Percent, ref x, percentWidth); x += spacing;
             }
-            if (Focused) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -1, -1));
+            if (Focused && keyboardFocus) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -1, -1));
         }
         void Draw(Graphics graphics, string text, ref int x, int width)
         {
@@ -98,6 +116,7 @@ namespace CodexAutoResume
             if (usageBusy || target == null || target.Demo || IsDisposed) return;
             string key = UsageSource.TargetKey(target), path = target.ProcessPath;
             int revision = usageRevision;
+            DateTime started = DateTime.UtcNow;
             usageBusy = true; usageCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); RenderUsage();
             var cancellation = usageCancellation;
             try
@@ -105,21 +124,25 @@ namespace CodexAutoResume
                 var result = await Task.Run(async delegate { return await CodexUsage.ReadAsync(UsageSource.Find(path, key), cancellation.Token); });
                 if (IsDisposed || cancellation.IsCancellationRequested || revision != usageRevision || key != UsageSource.TargetKey(target)) return;
                 usageError = result.Error;
-                if (result.Snapshot != null) { usageSnapshot = result.Snapshot; usageFailures = 0; }
+                if (result.Snapshot != null) usageSnapshot = result.Snapshot;
                 else
                 {
                     if (usageSnapshot == null || result.AccountKey != usageSnapshot.AccountKey || result.Error == UsageError.Changed) usageSnapshot = null;
-                    usageFailures++;
                 }
-                nextUsageRead = DateTime.UtcNow.AddMinutes(result.Error == UsageError.None ? 3 : Math.Min(15, Math.Pow(2, Math.Min(usageFailures, 4))));
+                ScheduleNextUsageRead(result.Error == UsageError.None, started);
             }
             catch (OperationCanceledException) { }
-            catch { if (!IsDisposed) { usageError = UsageError.Unavailable; usageSnapshot = null; nextUsageRead = DateTime.UtcNow.AddMinutes(3); } }
+            catch { if (!IsDisposed) { usageError = UsageError.Unavailable; usageSnapshot = null; ScheduleNextUsageRead(false, started); } }
             finally
             {
                 usageBusy = false; usageCancellation = null; cancellation.Dispose();
-                if (!IsDisposed && !lifetime.IsCancellationRequested) RenderUsage();
+                if (!IsDisposed && !lifetime.IsCancellationRequested) { RenderUsage(); QuotaUsageChanged(); }
             }
+        }
+        void ScheduleNextUsageRead(bool success, DateTime started)
+        {
+            if (success) { usageFailures = 0; nextUsageRead = started.AddSeconds(10); }
+            else { usageFailures++; nextUsageRead = DateTime.UtcNow.AddMinutes(Math.Min(15, Math.Pow(2, Math.Min(usageFailures, 4)))); }
         }
         string UsageMessage()
         {
@@ -141,7 +164,7 @@ namespace CodexAutoResume
             usageSummary.Message = usageBusy && usageSnapshot == null ? (UiText.English ? "Reading usage…" : "正在读取额度…") : UsageMessage();
             usageSummary.AccessibleName = UiText.English ? "Usage details" : "额度详情";
             usageSummary.AccessibleDescription = usageSnapshot == null ? usageSummary.Message : (usageSummary.Stale ? UsageMessage() + "; " : "") + String.Join("; ", usageSnapshot.Windows.Select(w => w.Label + " " + w.Percent));
-            tips.SetToolTip(usageSummary, usageSummary.AccessibleDescription + (UiText.English ? " · Click for details" : " · 点击查看详情"));
+            tips.SetToolTip(usageSummary, UsageHoverText());
             usageSummary.Invalidate();
             if (usageDetails != null && !usageDetails.IsDisposed)
             {
@@ -149,6 +172,15 @@ namespace CodexAutoResume
                 usageRefresh.Text = UiText.English ? "Refresh" : "刷新";
                 usageDialog.Text = UiText.English ? "Usage details" : "额度详情";
             }
+        }
+        string UsageHoverText()
+        {
+            if (usageSnapshot == null || usageSnapshot.Windows.Length == 0) return usageSummary.Message;
+            string text = usageSummary.Stale ? (UiText.English ? "Old data · " : "旧数据 · ") + UsageMessage() + Environment.NewLine : "";
+            text += String.Join(Environment.NewLine, usageSnapshot.Windows.Select(window => window.Label + (UiText.English ? " resets: " : " 重置：") +
+                (window.ResetUtc.HasValue ? window.ResetUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : (UiText.English ? "Unknown" : "未知"))));
+            if (usageSummary.Stale) text += Environment.NewLine + (UiText.English ? "Last successful read: " : "最近成功读取：") + usageSnapshot.FetchedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            return text;
         }
         string UsageDetailText()
         {

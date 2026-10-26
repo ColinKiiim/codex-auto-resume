@@ -34,6 +34,15 @@ namespace CodexAutoResume
                 source.Arguments = "--usage-fake changed";
                 result = CodexUsage.ReadAsync(source, CancellationToken.None, 10000).GetAwaiter().GetResult();
                 check(result.Error == UsageError.Changed && result.Snapshot == null, "account change while fetching rejects old quota");
+                source.Arguments = "--usage-fake bootstrap";
+                result = CodexUsage.ReadAsync(source, CancellationToken.None, 10000).GetAwaiter().GetResult();
+                check(result.Error == UsageError.None && result.Snapshot.Windows[0].Percent == "75%", "startup account notification discards poisoned in-flight limits and re-reads a complete stable epoch");
+                source.Arguments = "--usage-fake churn";
+                result = CodexUsage.ReadAsync(source, CancellationToken.None, 10000).GetAwaiter().GetResult();
+                check(result.Error == UsageError.Changed && result.Snapshot == null, "repeated account notifications remain rejected after the one bounded retry");
+                source.Arguments = "--usage-fake notified-change";
+                result = CodexUsage.ReadAsync(source, CancellationToken.None, 10000).GetAwaiter().GetResult();
+                check(result.Error == UsageError.Changed && result.Snapshot == null, "notification retry cannot silently accept a different account even if it stabilizes");
                 source.Arguments = "--usage-fake signedout";
                 result = CodexUsage.ReadAsync(source, CancellationToken.None, 10000).GetAwaiter().GetResult();
                 check(result.Error == UsageError.NotSignedIn && result.Snapshot == null, "signed-out login is not shown as zero quota");
@@ -81,7 +90,7 @@ namespace CodexAutoResume
                 return 0;
             }
             if (mode == "malformed") { Console.WriteLine("invalid protocol"); return 0; }
-            int reads = 0; string line;
+            int reads = 0, limitReads = 0; string line;
             while ((line = Console.ReadLine()) != null)
             {
                 var request = Parse(line); string method = UsageJson.Text(request, "method"); object id = UsageJson.Get(request, "id");
@@ -91,14 +100,17 @@ namespace CodexAutoResume
                 else if (method == "account/read")
                 {
                     reads++;
-                    result = new { account = mode == "signedout" ? null : new { type = "chatgpt", email = mode == "changed" && reads > 1 ? "other@example.invalid" : "sample@example.invalid", planType = "team" } };
+                    result = new { account = mode == "signedout" ? null : new { type = "chatgpt", email = (mode == "changed" || mode == "notified-change") && reads > 1 ? "other@example.invalid" : "sample@example.invalid", planType = "team" } };
                 }
                 else
                 {
+                    limitReads++;
+                    if (mode == "churn" || (mode == "bootstrap" || mode == "notified-change") && limitReads == 1)
+                        Console.WriteLine(Json.Serialize(new { method = "account/updated", @params = new { authMode = "chatgpt" } }));
                     Console.Error.WriteLine(new string('x', 20000));
                     Console.WriteLine(Json.Serialize(new { method = "account/rateLimits/updated", @params = new { } }));
                     Console.WriteLine(Json.Serialize(new { id = 999, method = "unsupported/request", @params = new { } }));
-                    result = Parse("{\"rateLimits\":{\"primary\":{\"usedPercent\":25,\"windowDurationMins\":300}}}");
+                    result = Parse("{\"rateLimits\":{\"primary\":{\"usedPercent\":" + (mode == "bootstrap" && limitReads == 1 ? "95" : "25") + ",\"windowDurationMins\":300}}}");
                 }
                 Console.WriteLine(Json.Serialize(new { id = id, result = result })); Console.Out.Flush();
             }

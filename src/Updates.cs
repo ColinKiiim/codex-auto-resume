@@ -36,7 +36,12 @@ namespace CodexAutoResume
         public int CropSize { get; set; }
         public string SkippedVersion { get; set; }
         public string Language { get; set; }
-        public UserPreferences() { CheckUpdates = true; Background = true; CropSize = 64; Language = "zh-CN"; }
+        public bool QuotaControl { get; set; }
+        public bool QuotaFiveHour { get; set; }
+        public bool QuotaWeekly { get; set; }
+        public int QuotaThreshold { get; set; }
+        public string ContinuePrompt { get; set; }
+        public UserPreferences() { CheckUpdates = true; Background = true; CropSize = 64; Language = "zh-CN"; QuotaFiveHour = QuotaWeekly = true; QuotaThreshold = 10; ContinuePrompt = "刚刚我中断了你的对话，请从上次中断处继续工作"; }
         internal static UserPreferences Load()
         {
             try
@@ -44,6 +49,9 @@ namespace CodexAutoResume
                 UserPreferences value = JsonFile.Read<UserPreferences>(Path.Combine(Portable.DataDirectory, "settings.json"));
                 if (value == null) return new UserPreferences();
                 value.Language = value.Language == "en" ? "en" : "zh-CN";
+                value.QuotaThreshold = Math.Max(0, Math.Min(99, value.QuotaThreshold));
+                if (!value.QuotaFiveHour && !value.QuotaWeekly) value.QuotaControl = false;
+                if (!ComposerRequest.ValidPrompt(value.ContinuePrompt)) value.ContinuePrompt = new UserPreferences().ContinuePrompt;
                 value.CropSize = Math.Max(36, Math.Min(160, value.CropSize)); return value;
             }
             catch { return new UserPreferences(); }

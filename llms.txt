@@ -2,7 +2,7 @@
 
 > A portable Windows x64 utility that automatically resumes paused Codex desktop tasks when a supported right-pointing resume button is present, including interruptions described as at capacity.
 
-Button recognition runs locally. The utility clicks only a strictly recognized resume triangle and checks the running square. It observes send arrows, voice waveforms and question panels without clicking. It does not modify service capacity, account quotas or model availability. CLI and browser automation are outside the current scope. Licensed under MIT.
+Button recognition runs locally. Ordinary auto-resume clicks a strictly recognized resume triangle and checks the running square. Compact current-login quota bars normally refresh every 10 seconds. Version 1.1.14 includes off-by-default experimental quota control: pause on any selected low quota and continue only after all selected quotas recover; a verified owned conversation may receive a custom continuation if its triangle is gone. Real Codex input and cross-device compatibility remain unverified; unsupported contexts wait. Questions and permissions always require the user. It does not modify service capacity, quotas or server timers. CLI and browser automation are outside scope. Licensed under MIT.
 
 Repository: https://github.com/ColinKiiim/codex-auto-resume
 

@@ -22,6 +22,7 @@ namespace CodexAutoResume
                 case ButtonState.Running: return "白色方块 · 运行中";
                 case ButtonState.Send: return "向上箭头 · 发送";
                 case ButtonState.Voice: return "声波图标 · 语音";
+                case ButtonState.VoiceClose: return "小叉 · 语音模式关闭";
                 default: return "未知图形";
             }
         }
@@ -38,8 +39,8 @@ namespace CodexAutoResume
         {
                 Native.ValidatePlatform();
                 Recognizer recognizer = new Recognizer();
-                string[] names = { "resume", "running", "send", "send-current", "voice" };
-                ButtonState[] expected = { ButtonState.Resume, ButtonState.Running, ButtonState.Send, ButtonState.Send, ButtonState.Voice };
+                string[] names = { "resume", "running", "send", "send-current", "voice", "voice-close" };
+                ButtonState[] expected = { ButtonState.Resume, ButtonState.Running, ButtonState.Send, ButtonState.Send, ButtonState.Voice, ButtonState.VoiceClose };
                 string report = "CodexAutoResume " + Version + " portable self-check" + Environment.NewLine;
                 report += "Windows Graphics Capture available: " + WindowCapture.Supported + Environment.NewLine;
                 try { report += "Offline question OCR: " + QuestionDetector.PlatformSummary() + Environment.NewLine; }

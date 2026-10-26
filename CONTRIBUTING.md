@@ -28,6 +28,6 @@ For bug reports, include utility/Codex/Windows versions, display scaling, mode, 
 
 不提交 `dist/`、`release/`、`packages/`、日志、完整对话截图或私人开发记录。已有发布附件保留原版本快照；新发布遵循 [发布流程](docs/releasing.md)。仅修改文档时检查链接和事实即可。
 
-`TODO.md` 只保留未完成工作；事项完成并满足验证与交付要求后，同轮移出当前待办，完成结论放入更新记录、验证文档或 `docs/history/`。共享的规则与决策记录继续纳入 Git；个人草稿、原始诊断和临时代理输出放在根目录 `.local/` 等忽略目录，不进入源码包。源码包有独立的文件选择规则，不能只依赖 `.gitignore`。
+`TODO.md` 只保留未完成工作；事项完成并满足验证与交付要求后，同轮移出当前待办，完成结论放入更新记录、验证文档或 `docs/history/`。当前事项从 1 连续编号，移除或调整顺序后重新编号；历史归档保留当时的标题与编号，跨文档引用优先使用任务名称。共享的规则与决策记录继续纳入 Git；个人草稿、原始诊断和临时代理输出放在根目录 `.local/` 等忽略目录，不进入源码包。源码包有独立的文件选择规则，不能只依赖 `.gitignore`。
 
 For code changes, keep the C# 5 / .NET Framework and single-file constraints. Match validation to the affected behavior; documentation-only contributions need link and factual review, not desktop interaction tests.

@@ -24,6 +24,7 @@ namespace CodexAutoResume
                 Group("Capture evidence and cancellation", Evidence);
                 Group("Update integrity and rollback", () => UpdateTests.Run(Check, root));
                 Group("Current-login usage protocol", () => UsageTests.Run(Check));
+                Group("Quota pause safety", Quota);
             }
             catch (Exception error) { failures++; Console.Error.WriteLine(error); }
             string result = "Assertions: " + assertions + "; failures: " + failures;
@@ -33,10 +34,10 @@ namespace CodexAutoResume
         static void Recognition(string root)
         {
             var recognizer = new Recognizer();
-            foreach (string name in new[] { "resume", "running", "send", "send-current", "voice" })
+            foreach (string name in new[] { "resume", "running", "send", "send-current", "voice", "voice-close" })
             using (var sample = new Bitmap(Path.Combine(root, "assets", name + "-reference.png")))
             {
-                var expected = name == "resume" ? ButtonState.Resume : name == "running" ? ButtonState.Running : name == "voice" ? ButtonState.Voice : ButtonState.Send;
+                var expected = name == "resume" ? ButtonState.Resume : name == "running" ? ButtonState.Running : name == "voice" ? ButtonState.Voice : name == "voice-close" ? ButtonState.VoiceClose : ButtonState.Send;
                 Check(recognizer.Classify(sample).State == expected, name + " real sample");
                 using (var scaled = new Bitmap(126, 126)) using (var graphics = Graphics.FromImage(scaled))
                 {
@@ -68,11 +69,54 @@ namespace CodexAutoResume
                 Check(buttons.Count == 2 && new RegionSelection().Resolve(buttons, image.Size) == -1, "ambiguous buttons require explicit selection");
             }
             Check(!Target.IsCodexIdentity("OtherApp", @"C:\Other.exe", "OpenAI", "Codex") && !Target.IsCodexIdentity("CodexAutoResume", @"C:\CodexAutoResume.exe", "OpenAI", "Codex"), "unrelated process and helper cannot become targets");
+            using (var image = new Bitmap(240, 100)) using (var graphics = Graphics.FromImage(image))
+            using (var close = new Bitmap(Path.Combine(root, "assets", "voice-close-reference.png")))
+            {
+                graphics.Clear(Color.FromArgb(24, 24, 24));
+                graphics.DrawImageUnscaled(close, 15, 20);
+                IconButton.Draw(graphics, new Rectangle(150, 20, 64, 64), "三角形");
+                var buttons = recognizer.FindButtons(image);
+                Check(buttons.Count == 1 && buttons[0].Detection.State == ButtonState.Resume, "auxiliary voice close cannot block a unique resume button");
+            }
+        }
+        static void Quota()
+        {
+            DateTime now = DateTime.UtcNow;
+            var options = new UserPreferences { QuotaControl = true, QuotaThreshold = 10 };
+            var five = new UsageWindow { Minutes = 300, Remaining = 10 };
+            var week = new UsageWindow { Minutes = 10080, Remaining = 80 };
+            var snapshot = new UsageSnapshot { AccountKey = "fixture", FetchedUtc = now, Windows = new[] { five, week } };
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now) == QuotaLevel.Low, "equal threshold pauses with OR logic");
+            five.Remaining = 80; week.Remaining = 2;
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now) == QuotaLevel.Low, "weekly alone can trigger pause");
+            options.QuotaWeekly = false;
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now) == QuotaLevel.Healthy, "unselected low window cannot block single-period recovery");
+            options.QuotaWeekly = true; week.Remaining = null;
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now) == QuotaLevel.Unknown, "missing selected quota cannot resume");
+            five.Remaining = 3;
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now) == QuotaLevel.Low, "one known low period can pause even when another is unknown");
+            five.Remaining = week.Remaining = 80;
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now) == QuotaLevel.Healthy, "all selected periods recovered, independent of old reset countdown");
+            Check(QuotaPolicy.Evaluate(snapshot, UsageError.Timeout, options, now) == QuotaLevel.Unknown && QuotaPolicy.Evaluate(snapshot, UsageError.None, options, now.AddSeconds(31)) == QuotaLevel.Unknown, "failed or expired quota cannot authorize an action");
+            var pause = new QuotaPause(); pause.StopSent(now);
+            pause.Observe(ButtonState.Resume, now.AddSeconds(-1), now.AddSeconds(1));
+            Check(pause.Phase == QuotaPhase.Stopping, "cached triangle cannot confirm a new stop");
+            pause.Observe(ButtonState.Resume, now.AddSeconds(1), now.AddSeconds(1));
+            Check(pause.Phase == QuotaPhase.Waiting && !pause.Due(QuotaLevel.Low, now.AddSeconds(59)) && pause.Due(QuotaLevel.Low, now.AddSeconds(61)), "quota wait samples once per minute");
+            Check(pause.Due(QuotaLevel.Healthy, now.AddSeconds(2)), "actual quota recovery bypasses minute screen wait");
+            pause.Observe(ButtonState.Running, now.AddSeconds(2), now.AddSeconds(2));
+            Check(!pause.Owned && pause.ManualOverride, "manual continuation cancels owned pause without fighting the user");
+            pause.StopSent(now); pause.Observe(ButtonState.Unknown, now.AddSeconds(-1), now.AddSeconds(16));
+            Check(pause.Phase == QuotaPhase.Uncertain, "stop confirmation timeout never allows repeat action, even with stale content");
+            Check(ComposerRequest.ValidPrompt("继续\n下一步") && !ComposerRequest.ValidPrompt("\t") && !ComposerRequest.ValidPrompt("继续\r\n下一步"), "custom prompt accepts validated LF text and rejects control sequences");
+            var request = new ComposerRequest { Prompt = "继续\n下一步", ProcessPath = @"C:\中文路径\Codex.exe", ExpiresUtc = now };
+            var copied = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ComposerRequest>(ComposerBridge.RequestText(request));
+            Check(copied.Prompt == request.Prompt && copied.ProcessPath == request.ProcessPath && Math.Abs((copied.ExpiresUtc.ToUniversalTime() - now).TotalMilliseconds) < 1, "worker wire preserves Chinese, multiline input and the UTC action deadline across code pages");
         }
         static void Recovery()
         {
             DateTime now = DateTime.UtcNow; var gate = new ResumeGate();
-            foreach (var inactive in new[] { ButtonState.Running, ButtonState.Send, ButtonState.Voice, ButtonState.Unknown })
+            foreach (var inactive in new[] { ButtonState.Running, ButtonState.Send, ButtonState.Voice, ButtonState.VoiceClose, ButtonState.Unknown })
                 Check(!gate.Observe(inactive, now), inactive + " cannot authorize a resume");
             for (int i = 0; i < 3; i++) gate.Observe(ButtonState.Resume, now.AddMilliseconds(i * 300));
             Check(gate.Observe(ButtonState.Resume, now.AddSeconds(1.2)), "stable triangle can reach action preflight");
