@@ -86,7 +86,7 @@ namespace CodexAutoResume
             UiText.Changed += RefreshLanguage;
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } else if (e.KeyCode == Keys.F4) { ShowBackgroundSelfCheck(); e.Handled = true; } };
-            automatic.CheckedChanged += delegate { if (!loadingOptions) ActivateOptions(automatic.Checked ? "自动恢复已开启" : "仅观察"); };
+            automatic.CheckedChanged += delegate { if (!loadingOptions) { if (!automatic.Checked) CancelSchedule(false); ActivateOptions(automatic.Checked ? "自动恢复已开启" : "仅观察"); } };
             background.CheckedChanged += delegate { if (loadingOptions) return; WindowCapture.StopCapture(); ActivateOptions(background.Checked ? "后台监测已开启" : "前台监测已开启"); SavePreferences(); };
             cropSize.ValueChanged += delegate { if (target != null && !target.Automatic) { generation++; target.CropSize = (int)cropSize.Value; gate.BreakStreak(); } };
             timer.Interval = 3000; timer.Tick += delegate { TickMonitor(); }; timer.Start();
@@ -164,6 +164,7 @@ namespace CodexAutoResume
         }
         void Connect(Target connected)
         {
+            CancelSchedule(true);
             CancelQuota();
             questions.Reset(); questionReported = false; nextMonitor = DateTime.MinValue;
             regionChoiceRequested = false; recoveryWindow.Reset(); captureWatchdog.Reset(); activity.ResetSource(); ResetPreview(); lastObservedContent = -1;
@@ -220,6 +221,7 @@ namespace CodexAutoResume
         }
         void Stop(string message)
         {
+            CancelSchedule(true);
             CancelQuota();
             if (diagnosticCancellation != null) diagnosticCancellation.Cancel();
             WindowCapture.StopCapture();
@@ -237,7 +239,7 @@ namespace CodexAutoResume
             if (!QuotaSampleDue()) return;
             if (target == null)
             { updating = true; try { Discover(); } catch (Exception e) { SetStatus("窗口检测暂不可用，继续等待：" + e.Message); } finally { updating = false; } return; }
-            if (!Native.IsWindow(target.Window)) { CancelQuota(); generation++; target = null; ResetPreview(); waitingForChoice = false; nextDiscovery = DateTime.MinValue; WindowCapture.StopCapture(); SetStatus("正在寻找 Codex"); return; }
+            if (!Native.IsWindow(target.Window)) { CancelSchedule(true); CancelQuota(); generation++; target = null; ResetPreview(); waitingForChoice = false; nextDiscovery = DateTime.MinValue; WindowCapture.StopCapture(); SetStatus("正在寻找 Codex"); return; }
             if (background.Checked) { TickBackground(); return; }
             updating = true;
             Target connected = target; int revision = generation;
@@ -269,6 +271,7 @@ namespace CodexAutoResume
                     (Math.Abs(badgeScreen.X - lastBadge.X) > 2 || Math.Abs(badgeScreen.Y - lastBadge.Y) > 2)) { gate.BreakStreak(); recoveryWindow.Reset(); recoveryWindow.Observe(d.State, DateTime.UtcNow); }
                 lastBadge = badgeScreen;
                 int previousVerified = gate.Verified;
+                ObserveSchedule(d.State, activity.LastContent);
                 bool ready = gate.Observe(d.State, DateTime.UtcNow); RecordVerified(previousVerified);
                 RefreshScores(d);
                 if (await HandleQuota(connected, revision, d, crop, activity.LastContent)) return;
@@ -279,6 +282,7 @@ namespace CodexAutoResume
                     return;
                 }
                 if (!automatic.Checked) { SetStatus("检测到暂停 · 仅观察"); return; }
+                if (!QuotaAllowsNormal()) return;
                 InputSnapshot input = inputReader();
                 if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return; }
                 Point center = new Point(crop.Left + d.ButtonBounds.Left + d.ButtonBounds.Width / 2, crop.Top + d.ButtonBounds.Top + d.ButtonBounds.Height / 2);
@@ -333,6 +337,8 @@ namespace CodexAutoResume
         void HealthTick()
         {
             UsagePulse();
+            if (resumeSchedule.Active && !resumeSchedule.Allows(DateTime.UtcNow, ScheduleClock, ScheduleTarget, ScheduleZone) && resumeSchedule.Invalid)
+            { CancelSchedule(true); SetStatus("时间或目标已变化，定时恢复已取消，请重新设置"); }
             DateTime now = DateTime.UtcNow;
             string summary = activity.Summary(now, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + "；当前状态=" + statusSource;
             RefreshUi();
@@ -454,6 +460,7 @@ namespace CodexAutoResume
                     if (!lastBadge.IsEmpty && (Math.Abs(badge.X - lastBadge.X) > 2 || Math.Abs(badge.Y - lastBadge.Y) > 2)) { gate.BreakStreak(); recoveryWindow.Reset(); recoveryWindow.Observe(d.State, DateTime.UtcNow); }
                     lastBadge = badge;
                     int previousVerified = gate.Verified;
+                    ObserveSchedule(d.State, frame.ContentAt);
                     bool ready = gate.ObserveCaptured(d.State, DateTime.UtcNow, frame.ContentAt); RecordVerified(previousVerified);
                     RefreshScores(d);
                     if (await HandleQuota(connected, revision, d, crop, frame.ContentAt)) return;
@@ -461,6 +468,7 @@ namespace CodexAutoResume
                     if (!ready)
                     { ObserveStatus(d.State); return; }
                     if (!automatic.Checked) { SetStatus("检测到暂停 · 仅观察"); return; }
+                    if (!QuotaAllowsNormal()) return;
                     InputSnapshot input = inputReader();
                     if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return; }
                     // An action needs an independent acquisition, including when
@@ -504,7 +512,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            UiDialog.Show(this, UiText.English ? "Codex Auto Resume " + Portable.Version + "\n\nFinds Codex automatically; starts in observation mode.\nEnable Auto-resume after confirming the target. Pause stops monitoring.\nBackground monitoring works while covered; keep Codex unminimized.\nQuestion panels wait for your answer and are never answered automatically.\nFor multiple buttons, use Select area to confirm the target.\n\nSettings contains diagnostics, demos, logs and updates.\nUpdates ask for confirmation, then download, verify, install and restart.\n\nFallback shortcuts: " + shortcut + "+F8 connects; F7 calibrates;\nF9 pauses/resumes; F10 stops immediately.\nF2 self-check; F4 background test.\n\nLogs: " + logDirectory : "Codex Auto Resume " + Portable.Version + "\n\n自动寻找 Codex，启动时仅观察。\n确认目标后打开“自动恢复”；暂停可停止监测。\n后台监测允许窗口被遮挡，但 Codex 不能最小化。\n需要你回答问题时，工具会等待，不会代答。\n多个按钮时持续扫描，可通过“选择区域”指定目标。\n\n设置中可查看诊断、演示、日志和更新。\n自动更新会先征求确认，再下载、校验、替换并重启。\n\n备用快捷键：" + shortcut + "+F8 连接窗口；\nF7 手动标定；F9 暂停/继续；F10 紧急停止。\nF2 本机自检；F4 后台自测。\n\n日志目录：" + logDirectory, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            UiDialog.Show(UpdateDialogOwner(), UiText.English ? "Codex Auto Resume " + Portable.Version + "\n\nFinds Codex automatically; starts in observation mode.\nEnable Auto-resume after confirming the target. Pause stops monitoring.\nBackground monitoring works while covered; keep Codex unminimized.\nQuestion panels wait for your answer and are never answered automatically.\nFor multiple buttons, use Select area to confirm the target.\n\nSettings contains diagnostics, demos, logs and updates.\nUpdates ask for confirmation, then download, verify, install and restart.\n\nFallback shortcuts: " + shortcut + "+F8 connects; F7 calibrates;\nF9 pauses/resumes; F10 stops immediately.\nF2 self-check; F4 background test.\n\nLogs: " + logDirectory : "Codex Auto Resume " + Portable.Version + "\n\n自动寻找 Codex，启动时仅观察。\n确认目标后打开“自动恢复”；暂停可停止监测。\n后台监测允许窗口被遮挡，但 Codex 不能最小化。\n需要你回答问题时，工具会等待，不会代答。\n多个按钮时持续扫描，可通过“选择区域”指定目标。\n\n设置中可查看诊断、演示、日志和更新。\n自动更新会先征求确认，再下载、校验、替换并重启。\n\n备用快捷键：" + shortcut + "+F8 连接窗口；\nF7 手动标定；F9 暂停/继续；F10 紧急停止。\nF2 本机自检；F4 后台自测。\n\n日志目录：" + logDirectory, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {
@@ -546,7 +554,7 @@ namespace CodexAutoResume
                 TextBox document = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = DesktopIdentity.LicenseText().Replace("\r\n", "\n").Replace("\n", Environment.NewLine), Font = new Font("Consolas", 10) };
                 dialog.Controls.Add(document);
                 dialog.Shown += delegate { document.Focus(); document.Select(0, 0); };
-                UiText.Apply(dialog); dialog.ShowDialog(this);
+                UiText.Apply(dialog); WindowUi.Modal(dialog, UpdateDialogOwner());
             }
         }
         void SetStatus(string text)

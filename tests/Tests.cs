@@ -25,6 +25,7 @@ namespace CodexAutoResume
                 Group("Update integrity and rollback", () => UpdateTests.Run(Check, root));
                 Group("Current-login usage protocol", () => UsageTests.Run(Check));
                 Group("Quota pause safety", Quota);
+                Group("Scheduled recovery safety", Schedule);
             }
             catch (Exception error) { failures++; Console.Error.WriteLine(error); }
             string result = "Assertions: " + assertions + "; failures: " + failures;
@@ -112,6 +113,45 @@ namespace CodexAutoResume
             var request = new ComposerRequest { Prompt = "继续\n下一步", ProcessPath = @"C:\中文路径\Codex.exe", ExpiresUtc = now };
             var copied = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ComposerRequest>(ComposerBridge.RequestText(request));
             Check(copied.Prompt == request.Prompt && copied.ProcessPath == request.ProcessPath && Math.Abs((copied.ExpiresUtc.ToUniversalTime() - now).TotalMilliseconds) < 1, "worker wire preserves Chinese, multiline input and the UTC action deadline across code pages");
+        }
+        static void Schedule()
+        {
+            DateTime now = DateTime.UtcNow;
+            var plan = new ResumeSchedule();
+            plan.Arm(now.AddMinutes(1), "original", now, 100, "zone");
+            Check(!plan.Allows(now.AddSeconds(30), 130, "original", "zone") && plan.Allows(now.AddMinutes(1), 160, "original", "zone"), "schedule blocks before deadline and allows at deadline without an early action");
+            plan.Observe(ButtonState.Resume, now); plan.Observe(ButtonState.Running, now.AddSeconds(-1));
+            Check(plan.Active, "stale running evidence cannot consume a scheduled recovery");
+            plan.Observe(ButtonState.Running, now.AddSeconds(1));
+            Check(!plan.Active, "fresh running confirmation consumes the one-shot schedule");
+            plan.Arm(now.AddMinutes(1), "original", now, 100, "zone");
+            Check(!plan.Allows(now.AddMinutes(1), 160, "other", "zone") && plan.Invalid, "switching target never transfers scheduled permission");
+            plan.Arm(now.AddMinutes(1), "original", now, 100, "zone");
+            Check(!plan.Allows(now.AddHours(1), 101, "original", "zone") && plan.Invalid, "forward wall-clock jump cannot authorize early recovery");
+            plan.Arm(now.AddMinutes(1), "original", now, 100, "zone");
+            Check(plan.Allows(now.AddHours(1), 3700, "original", "zone"), "elapsed sleep across deadline allows fresh recovery checks");
+            Check(!plan.Allows(now.AddHours(1), 3700, "original", "other-zone"), "timezone changes invalidate armed intent");
+            plan.Cancel(); Check(!plan.Active && !new ResumeSchedule().Active, "cancellation and a new process never replay a prior schedule");
+            bool rejected = false;
+            try { plan.Arm(now, "original", now, 100, "zone"); } catch (ArgumentException) { rejected = true; }
+            Check(rejected, "past or current deadlines cannot silently arm");
+            var json = new System.Web.Script.Serialization.JavaScriptSerializer();
+            var old = json.Deserialize<UserPreferences>("{\"QuotaThreshold\":5,\"QuotaFiveHour\":false,\"QuotaWeekly\":true}");
+            Check(old.FiveHourThreshold == 5 && old.WeeklyThreshold == 5 && !old.QuotaFiveHour && old.QuotaWeekly, "legacy shared threshold and selection migrate without changing behavior");
+            old.QuotaFiveHourThreshold = 5; old.QuotaWeeklyThreshold = 15;
+            var saved = json.Deserialize<UserPreferences>(json.Serialize(old));
+            Check(saved.FiveHourThreshold == 5 && saved.WeeklyThreshold == 15, "independent threshold values persist without overwriting each other");
+            var five = new UsageWindow { Minutes = 300, Remaining = 6 };
+            var week = new UsageWindow { Minutes = 10080, Remaining = 15 };
+            var usage = new UsageSnapshot { FetchedUtc = now, Windows = new[] { five, week } };
+            saved.QuotaFiveHour = true;
+            Check(QuotaPolicy.Evaluate(usage, UsageError.None, saved, now) == QuotaLevel.Low, "weekly equality uses its own threshold when 5h is healthy");
+            week.Remaining = 16;
+            Check(QuotaPolicy.Evaluate(usage, UsageError.None, saved, now) == QuotaLevel.Healthy, "both selected periods must exceed their individual thresholds");
+            five.Remaining = 5;
+            Check(QuotaPolicy.Evaluate(usage, UsageError.None, saved, now) == QuotaLevel.Low, "5h equality uses its own threshold");
+            saved.QuotaFiveHour = false;
+            Check(QuotaPolicy.Evaluate(usage, UsageError.None, saved, now) == QuotaLevel.Healthy, "disabled low 5h cannot block weekly-only recovery");
         }
         static void Recovery()
         {

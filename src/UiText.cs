@@ -12,7 +12,21 @@ namespace CodexAutoResume
         static readonly ConditionalWeakTable<Control, Binding> bindings = new ConditionalWeakTable<Control, Binding>();
         static readonly Dictionary<string, string> english = new Dictionary<string, string>
         {
-            { "额度自动暂停与恢复（实验性）", "Pause and resume by quota (experimental)" },
+            { "额度自动暂停与恢复", "Pause and resume by quota" },
+            { "定时恢复", "Scheduled recovery" },
+            { "设置一次性恢复时间", "Set one-time recovery" },
+            { "取消定时", "Cancel schedule" },
+            { "未设置定时恢复", "No recovery time set" },
+            { "等待指定时间", "Waiting for scheduled time" },
+            { "已到时间，等待恢复条件", "Time reached; waiting for recovery conditions" },
+            { "时间或目标已变化，定时恢复已取消，请重新设置", "Time or target changed; schedule canceled, please set it again" },
+            { "请选择无夏令时歧义的有效时间", "Choose a valid time without daylight-saving ambiguity" },
+            { "请选择未来的日期和时间", "Choose a future date and time" },
+            { "请先连接目标并开启监测", "Connect a target and enable monitoring first" },
+            { "请等待当前操作确认后再设置定时", "Wait for the current action to be confirmed before scheduling" },
+            { "定时已设置，请开启自动恢复", "Recovery time set; enable Auto-resume" },
+            { "定时恢复已取消", "Scheduled recovery canceled" },
+            { "到点且额度满足后才允许恢复，不会主动暂停\n仅本次运行有效；停止监测、切换目标或退出即取消", "Resume only after the time and quota conditions are met; no scheduled pause\nThis session only; stopping, changing targets or exiting cancels it" },
             { "启用额度控制（需开启自动恢复）", "Enable quota control (requires Auto-resume)" },
             { "周额度", "Weekly" },
             { "剩余 ≤", "Pause at ≤" },

@@ -65,6 +65,7 @@ namespace CodexAutoResume
             var target = new Target { Window = new IntPtr(request.Window), ProcessId = request.ProcessId, ProcessStart = request.ProcessStart, ProcessPath = request.ProcessPath };
             DateTime expires = request.ExpiresUtc.ToUniversalTime();
             if (DateTime.UtcNow >= expires || (expires - DateTime.UtcNow).TotalSeconds > 31 || !target.ValidateIdentity(out why)) return false;
+            if (request.NotBeforeUtc.HasValue && DateTime.UtcNow < request.NotBeforeUtc.Value.ToUniversalTime()) return false;
             if (!inputTick.HasValue) return true;
             var input = Native.ReadInput();
             return input.Valid && !input.Held && input.IdleMilliseconds >= RecoveryWindow.QuietMilliseconds && input.Tick == inputTick.Value;
@@ -140,8 +141,12 @@ namespace CodexAutoResume
             }
             catch (Exception error) { stage += ":" + error.GetType().Name + (error is ComposerUnavailable ? ":" + error.Message : ""); reply = new ComposerReply { Result = mayHaveWritten ? "Uncertain" : "Blocked" }; }
             reply.Stage = stage;
-            Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Console.WriteLine(json.Serialize(reply)); return 0;
+            // The portable application is a GUI executable, without a console.
+            // OutputEncoding tries SetConsoleOutputCP and can throw even with
+            // inherited redirected pipes. Write UTF-8 to the pipe directly.
+            using (var output = new System.IO.StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)))
+            { output.WriteLine(json.Serialize(reply)); output.Flush(); }
+            return 0;
         }
     }
 
@@ -167,11 +172,39 @@ namespace CodexAutoResume
         {
             var all = Elements(ControlType.Edit).Concat(Elements(ControlType.Document)).ToArray();
             var editors = all.Where(e => e.Current.IsEnabled && !e.Current.IsOffscreen && e.Current.IsKeyboardFocusable).ToArray();
+            if (CodexDocument() != null)
+                editors = editors.Where(e => e.Current.ControlType == ControlType.Edit && Named(e, "和 Codex 一起工作", "Work with Codex")).ToArray();
             if (editors.Length != 1) throw new ComposerUnavailable("editor-count-" + editors.Length + "-all-" + all.Length);
             return editors[0];
         }
+        AutomationElement CodexDocument()
+        {
+            // Recognized Store Codex structure, observed on 26.1021.3705.0.
+            // Do not treat an arbitrary document title as a conversation ID.
+            if ((request.ProcessPath ?? "").IndexOf("\\OpenAI.Codex_", StringComparison.OrdinalIgnoreCase) < 0) return null;
+            var documents = Elements(ControlType.Document).Where(e => e.Current.AutomationId == "RootWebArea" && !String.IsNullOrWhiteSpace(e.Current.Name)).ToArray();
+            return documents.Length == 1 ? documents[0] : null;
+        }
+        static bool InListItem(AutomationElement element)
+        {
+            for (int n = 0; element != null && n < 5; n++, element = TreeWalker.ControlViewWalker.GetParent(element))
+                if (element.Current.ControlType == ControlType.ListItem) return true;
+            return false;
+        }
         ComposerContext BuildContext()
         {
+            var document = CodexDocument();
+            if (document != null)
+            {
+                string name = document.Current.Name;
+                var headers = Elements(ControlType.ToolBar).Where(e => Named(e, "聊天工具栏", "Chat toolbar") &&
+                    e.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text)).Cast<AutomationElement>().Any(t => t.Current.Name == name)).ToArray();
+                var conversations = Elements(ControlType.Button).Where(e => e.Current.Name == name && InListItem(e)).ToArray();
+                // Require agreement of the document, unique sidebar item and
+                // current chat header. Duplicate names or hidden sidebars wait.
+                if (headers.Length != 1 || conversations.Length != 1) throw new ComposerUnavailable("codex-conversation-structure");
+                return new ComposerContext { Backend = "UIA", Title = name, Conversation = Id(document) + ":" + Id(conversations[0]), Editor = Id(editor) };
+            }
             // A generic app title alone cannot bind a conversation. Require a
             // selected conversation item with a stable provider runtime ID.
             string title = Native.Title(new IntPtr(request.Window));
@@ -207,7 +240,7 @@ namespace CodexAutoResume
             // Attachments, dialogs, questions or voice controls block the whole
             // transaction. Unknown provider structure remains unsupported.
             bool blocked = Elements(ControlType.Window).Length > 0 || Elements(ControlType.Button).Any(e => Named(e,
-                "Submit", "提交", "Close voice mode", "退出语音模式", "Remove attachment", "移除附件", "Remove file", "移除文件"));
+                "Submit", "提交", "Skip", "跳过", "Close voice mode", "退出语音模式", "Remove attachment", "移除附件", "Remove file", "移除文件"));
             bool running = Elements(ControlType.Button).Any(e => Named(e, "Stop", "Stop generating", "停止", "停止生成"));
             return new ComposerReply { Context = context, Safe = !blocked, Running = running, Empty = Text().Length == 0 };
         }

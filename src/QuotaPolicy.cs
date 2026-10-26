@@ -20,7 +20,7 @@ namespace CodexAutoResume
                 var windows = snapshot.Windows.Where(w => w.Minutes == minutes).ToArray();
                 if (windows.Length != 1 || !windows[0].Remaining.HasValue || Double.IsNaN(windows[0].Remaining.Value) ||
                     Double.IsInfinity(windows[0].Remaining.Value) || windows[0].Remaining < 0 || windows[0].Remaining > 100) { unknown = true; continue; }
-                if (windows[0].Remaining.Value <= options.QuotaThreshold) low = true;
+                if (windows[0].Remaining.Value <= (minutes == 300 ? options.FiveHourThreshold : options.WeeklyThreshold)) low = true;
             }
             return low ? QuotaLevel.Low : unknown ? QuotaLevel.Unknown : QuotaLevel.Healthy;
         }

@@ -40,10 +40,14 @@ namespace CodexAutoResume
                         Field<Button>(main, "toggle").PerformClick(); background.Checked = true; automatic.Checked = true;
                         Require(!Field<bool>(main, "monitoring"), "changing settings cannot restart paused monitoring");
                         Field<Button>(main, "toggle").PerformClick();
+                        ArmSchedule(main, DateTime.UtcNow.AddSeconds(5));
                         using (var cover = new Form { Bounds = Rectangle.Inflate(demo.Bounds, 20, 20), BackColor = Color.Magenta, TopMost = true, StartPosition = FormStartPosition.Manual })
                         {
                             cover.Show(); cover.Activate();
+                            await Task.Delay(2500);
+                            Require(Field<ResumeGate>(main, "gate").Attempts == 0, "scheduled time blocks ordinary triangle recovery before the deadline");
                             await Until(() => Field<ResumeGate>(main, "gate").Verified == 1);
+                            Require(!Field<ResumeSchedule>(main, "resumeSchedule").Active, "confirmed ordinary recovery consumes the one-shot schedule");
                             var multiple = demo.Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<CheckBox>().Single();
                             multiple.Checked = true; await Task.Delay(3500);
                             Require(Field<ResumeGate>(main, "gate").Attempts == 1, "ambiguous buttons never cause another click");
@@ -67,7 +71,10 @@ namespace CodexAutoResume
                             long reads = Field<MonitorActivity>(main, "activity").Reads;
                             await Task.Delay(3500);
                             Require(Field<int>(demo, "clicks") == 2 && Field<MonitorActivity>(main, "activity").Reads == reads, "quota wait suppresses ordinary resume and continuous screen sampling");
+                            ArmSchedule(main, DateTime.UtcNow.AddSeconds(5));
                             snapshot.Windows[0].Remaining = 80; snapshot.FetchedUtc = DateTime.UtcNow; Call(main, "QuotaUsageChanged");
+                            await Task.Delay(2000);
+                            Require(Field<int>(demo, "clicks") == 2, "healthy quota cannot bypass a future recovery time");
                             await Until(() => Field<ResumeGate>(main, "gate").Verified == 2);
                             Require(icon.State == "方块" && Field<int>(demo, "clicks") == 3, "actual quota recovery resumes the original triangle exactly once");
                             snapshot.Windows[0].Remaining = 5; snapshot.FetchedUtc = DateTime.UtcNow;
@@ -90,6 +97,12 @@ namespace CodexAutoResume
             }
             return code;
         }
+        static void ArmSchedule(MainForm main, DateTime due)
+        {
+            var target = Field<Target>(main, "target");
+            Field<ResumeSchedule>(main, "resumeSchedule").Arm(due, target.Window + ":" + target.ProcessId + ":" + target.ProcessStart,
+                DateTime.UtcNow, (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency, TimeZoneInfo.Local.Id);
+        }
         static async Task ComposerBoundary(MainForm main)
         {
             main.GetType().GetMethod("Stop", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(main, new object[] { "composer fixture" });
@@ -111,6 +124,8 @@ namespace CodexAutoResume
                     var target = new Target { Window = fixture.Handle, ProcessId = process.Id, ProcessStart = process.StartTime.ToUniversalTime().Ticks, ProcessPath = process.MainModule.FileName };
                     var observed = await ComposerBridge.RunAsync(target, "inspect", null, "继续工作", DateTime.UtcNow.AddSeconds(25), System.Threading.CancellationToken.None);
                     Require(observed.Result == "Observed" && observed.Context != null && observed.Safe && !observed.Running && observed.Empty, "owned UIA helper binds the selected conversation and safe idle editor; stage=" + observed.Stage);
+                    var early = await ComposerBridge.RunAsync(target, "submit", observed.Context, "继续工作", DateTime.UtcNow.AddSeconds(25), System.Threading.CancellationToken.None, DateTime.UtcNow.AddHours(1));
+                    Require(early.Result == "Blocked" && editor.Text == "" && count == 0, "worker independently rejects submission before the scheduled time");
                     editor.Text = "existing draft";
                     var blocked = await ComposerBridge.RunAsync(target, "submit", observed.Context, "继续工作", DateTime.UtcNow.AddSeconds(25), System.Threading.CancellationToken.None);
                     Require(blocked.Result == "Blocked" && editor.Text == "existing draft" && count == 0, "existing draft is neither overwritten nor sent");

@@ -40,6 +40,10 @@ namespace CodexAutoResume
         public bool QuotaFiveHour { get; set; }
         public bool QuotaWeekly { get; set; }
         public int QuotaThreshold { get; set; }
+        public int? QuotaFiveHourThreshold { get; set; }
+        public int? QuotaWeeklyThreshold { get; set; }
+        internal int FiveHourThreshold { get { return Math.Max(0, Math.Min(99, QuotaFiveHourThreshold ?? QuotaThreshold)); } }
+        internal int WeeklyThreshold { get { return Math.Max(0, Math.Min(99, QuotaWeeklyThreshold ?? QuotaThreshold)); } }
         public string ContinuePrompt { get; set; }
         public UserPreferences() { CheckUpdates = true; Background = true; CropSize = 64; Language = "zh-CN"; QuotaFiveHour = QuotaWeekly = true; QuotaThreshold = 10; ContinuePrompt = "刚刚我中断了你的对话，请从上次中断处继续工作"; }
         internal static UserPreferences Load()
@@ -50,6 +54,8 @@ namespace CodexAutoResume
                 if (value == null) return new UserPreferences();
                 value.Language = value.Language == "en" ? "en" : "zh-CN";
                 value.QuotaThreshold = Math.Max(0, Math.Min(99, value.QuotaThreshold));
+                value.QuotaFiveHourThreshold = value.FiveHourThreshold;
+                value.QuotaWeeklyThreshold = value.WeeklyThreshold;
                 if (!value.QuotaFiveHour && !value.QuotaWeekly) value.QuotaControl = false;
                 if (!ComposerRequest.ValidPrompt(value.ContinuePrompt)) value.ContinuePrompt = new UserPreferences().ContinuePrompt;
                 value.CropSize = Math.Max(36, Math.Min(160, value.CropSize)); return value;

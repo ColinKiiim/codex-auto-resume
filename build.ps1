@@ -70,6 +70,8 @@ if ($QuestionTests) {
 }
 if ($BuildOnly) { Write-Output ('Build-only verified: ' + $version + '; release history unchanged.'); return }
 $candidateExe = Join-Path $distPath 'CodexAutoResume.exe'
+& (Join-Path $projectRoot 'tests\composer-portable.ps1') -ExecutablePath $candidateExe
+if (-not $?) { throw 'Portable composer protocol check failed.' }
 & (Join-Path $projectRoot 'tests\background-portable.ps1') -ExecutablePath $candidateExe
 if (-not $?) { throw 'Portable background diagnostic failed.' }
 & (Join-Path $projectRoot 'tools\package-source.ps1')

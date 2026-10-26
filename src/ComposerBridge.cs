@@ -26,6 +26,7 @@ namespace CodexAutoResume
         public ComposerContext Context { get; set; }
         public string Prompt { get; set; }
         public DateTime ExpiresUtc { get; set; }
+        public DateTime? NotBeforeUtc { get; set; }
         internal static bool ValidPrompt(string text)
         { return !String.IsNullOrWhiteSpace(text) && text.Length <= 2048 && !text.Any(c => Char.IsControl(c) && c != '\n' || c == '\u2028' || c == '\u2029'); }
     }
@@ -50,11 +51,11 @@ namespace CodexAutoResume
         }
         // The helper is bounded and owned. UI Automation providers can hang;
         // they never run on the monitor thread or leave an unbounded task there.
-        internal static async Task<ComposerReply> RunAsync(Target target, string operation, ComposerContext context, string prompt, DateTime expires, CancellationToken cancel)
+        internal static async Task<ComposerReply> RunAsync(Target target, string operation, ComposerContext context, string prompt, DateTime expires, CancellationToken cancel, DateTime? notBefore = null)
         {
             var request = new ComposerRequest { Window = target.Window.ToInt64(), ProcessId = target.ProcessId,
                 ProcessStart = target.ProcessStart, ProcessPath = target.ProcessPath, Operation = operation,
-                Context = context, Prompt = prompt, ExpiresUtc = expires };
+                Context = context, Prompt = prompt, ExpiresUtc = expires, NotBeforeUtc = notBefore };
             using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel))
             using (var process = new Process { StartInfo = new ProcessStartInfo(Updates.Executable, "--composer-worker") {
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true,

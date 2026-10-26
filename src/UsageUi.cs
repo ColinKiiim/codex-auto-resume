@@ -202,7 +202,7 @@ namespace CodexAutoResume
             scroll.SizeChanged += delegate { if (usageDetails != null && !usageDetails.IsDisposed) usageDetails.MaximumSize = new Size(Math.Max(100, scroll.ClientSize.Width - 16), 0); };
             usageRefresh = UiButton(UiText.English ? "Refresh" : "刷新", async delegate { await RefreshUsageAsync(); }); usageRefresh.Anchor = AnchorStyles.Right;
             panel.Controls.Add(scroll, 0, 0); panel.Controls.Add(usageRefresh, 0, 1); usageDialog.Controls.Add(panel);
-            usageDialog.FormClosed += delegate { usageDetails = null; usageRefresh = null; }; RenderUsage(); usageDialog.Show(this);
+            usageDialog.FormClosed += delegate { usageDetails = null; usageRefresh = null; }; RenderUsage(); WindowUi.Show(usageDialog, this);
         }
     }
 }

@@ -86,10 +86,11 @@ namespace CodexAutoResume
             connection.SetColumnSpan(targetName, 2);
             connection.Controls.Add(modeTitle, 0, 1); connection.Controls.Add(modeName, 1, 1); connection.SetColumnSpan(modeName, 2); layout.Controls.Add(connection, 0, 2);
 
-            TableLayoutPanel options = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = new Padding(0, 8, 0, 8) };
-            options.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); options.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            TableLayoutPanel options = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Margin = new Padding(0, 2, 0, 2) };
+            options.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); options.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); options.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             automatic.Text = "自动恢复"; automatic.Margin = Padding.Empty; automatic.Dock = DockStyle.Fill; options.Controls.Add(automatic, 0, 0);
             options.Controls.Add(new Label { Dock = DockStyle.Fill, Margin = Padding.Empty, ForeColor = Color.DimGray, Text = "暂停后空闲 1.5 秒自动继续；关闭后仅观察", TextAlign = ContentAlignment.MiddleLeft }, 0, 1); layout.Controls.Add(options, 0, 3);
+            options.Controls.Add(scheduleSummary, 0, 2);
             TableLayoutPanel history = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
             history.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); history.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
             history.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); history.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -150,13 +151,14 @@ namespace CodexAutoResume
             using (Bitmap snapshot = new Bitmap(preview.Image))
             {
                 detail.Controls.Add(new PictureBox { Dock = DockStyle.Fill, Image = snapshot, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(35, 35, 35) });
-                UiText.Apply(detail); detail.ShowDialog(this);
+                UiText.Apply(detail); WindowUi.Modal(detail, this);
             }
         }
 
         void RefreshUi()
         {
             if (IsDisposed) return;
+            RefreshSchedule();
             UiText.Set(health, diagnosing ? "● 自测中" : !monitoring ? "● 已暂停" : automatic.Checked ? "● 正在监测" : "● 正在监测 · 仅观察");
             health.ForeColor = diagnosing ? Color.SteelBlue : monitoring ? Color.FromArgb(36, 113, 83) : Color.DimGray;
             UiText.Set(toggle, monitoring ? "暂停" : "继续监测"); toggle.Enabled = !diagnosing;
@@ -184,6 +186,7 @@ namespace CodexAutoResume
         {
             if (diagnosing || installingUpdate) return;
             if (!monitoring) { SetStatus("请先继续监测，再更换窗口"); return; }
+            CancelSchedule(true); CancelQuota();
             generation++; WindowCapture.StopCapture(); target = null; activity.ResetSource(); ResetPreview();
             waitingForChoice = false; nextDiscovery = DateTime.MinValue; Discover(); RefreshUi();
         }
@@ -232,15 +235,15 @@ namespace CodexAutoResume
             if (activityWindow != null && !activityWindow.IsDisposed) { activityWindow.Activate(); return; }
             activityWindow = new Form { Text = "活动记录", Font = Font, ClientSize = new Size(620, 360), StartPosition = FormStartPosition.CenterParent, Icon = Icon };
             activityView = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = UiText.Get(logBox.Text) };
-            activityWindow.Controls.Add(activityView); activityWindow.FormClosed += delegate { activityView = null; }; UiText.Apply(activityWindow); activityWindow.Show(this);
+            activityWindow.Controls.Add(activityView); activityWindow.FormClosed += delegate { activityView = null; }; UiText.Apply(activityWindow); WindowUi.Show(activityWindow, this);
         }
         void ShowSettings()
         {
             if (settingsWindow != null && !settingsWindow.IsDisposed) { settingsWindow.Activate(); return; }
-            settingsWindow = new Form { Text = "设置", Font = Font, ClientSize = new Size(570, 450), MinimumSize = new Size(540, 460), StartPosition = FormStartPosition.CenterParent, Icon = Icon };
+            settingsWindow = new Form { Text = "设置", Font = Font, AutoScaleDimensions = new SizeF(96, 96), AutoScaleMode = AutoScaleMode.Dpi, ClientSize = new Size(570, 450), MinimumSize = new Size(540, 460), StartPosition = FormStartPosition.CenterParent, Icon = Icon };
             TabControl tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
             TabPage general = new TabPage("常规"), diagnostics = new TabPage("诊断工具"), about = new TabPage("帮助与更新"); tabs.TabPages.AddRange(new[] { general, diagnostics, about });
-            FlowLayoutPanel common = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(16) };
+            FlowLayoutPanel common = new FlowLayoutPanel { Name = "SettingsContent", Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(16) };
             common.Controls.Add(UiLabel("语言"));
             ComboBox language = new ComboBox { Name = "LanguageSelector", DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
             language.Items.AddRange(new object[] { "简体中文", "English" }); language.SelectedIndex = UiText.English ? 1 : 0;
@@ -251,13 +254,14 @@ namespace CodexAutoResume
             CheckBox checkUpdates = new CheckBox { Text = "自动检查更新", AutoSize = true, Checked = preferences.CheckUpdates };
             checkUpdates.CheckedChanged += delegate { preferences.CheckUpdates = checkUpdates.Checked; nextUpdateCheck = DateTime.UtcNow.AddSeconds(1); SavePreferences(); }; common.Controls.Add(checkUpdates);
             AddQuotaSettings(common);
+            AddScheduleSettings(common);
             common.Controls.Add(UiLabel("高级定位"));
             Button chooseWindow = UiButton("选择窗口", delegate { ChangeWindow(); }); chooseWindow.Name = "ChooseWindow"; common.Controls.Add(chooseWindow);
             common.Controls.Add(UiButton("选择按钮区域", delegate { RequestRegion(); }));
-            Label calibration = UiLabel("手动标定：将鼠标移到目标按钮中心，按 " + shortcut + "+F7"); common.Controls.Add(calibration);
+            Label calibration = UiLabel("手动标定：将鼠标移到目标按钮中心，按 " + shortcut + "+F7"); calibration.Name = "ManualCalibration"; common.Controls.Add(calibration);
             FlowLayoutPanel crop = new FlowLayoutPanel { AutoSize = true, Visible = target != null && !target.Automatic };
             crop.Controls.Add(UiLabel("手动区域大小（像素）")); crop.Controls.Add(cropSize); common.Controls.Add(crop);
-            general.Controls.Add(common);
+            WindowUi.ScrollContent(general, common);
 
             TableLayoutPanel detail = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 2, RowCount = 3 };
             detail.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116)); detail.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -285,13 +289,13 @@ namespace CodexAutoResume
             information.Controls.Add(UiButton("检查更新", async delegate { await CheckUpdatesAsync(true); }));
             information.Controls.Add(UiButton("使用说明", delegate { ShowHelp(); })); information.Controls.Add(UiButton("许可证", delegate { ShowLicense(); }));
             information.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(510, 0), Text = "启动默认仅观察，开启自动恢复后才会点击\n自动检查每 6 小时一次，没有更新时保持安静", ForeColor = Color.DimGray, Margin = new Padding(0, 16, 0, 0) });
-            about.Controls.Add(information); settingsWindow.Controls.Add(tabs);
+            WindowUi.ScrollContent(about, information); settingsWindow.Controls.Add(tabs);
             settingsWindow.FormClosed += delegate
             {
                 refresh.Stop(); refresh.Dispose(); if (sample.Image != null) sample.Image.Dispose();
                 common.Controls.Remove(background); crop.Controls.Remove(cropSize); SavePreferences();
             };
-            UiText.Apply(settingsWindow); settingsWindow.Show(this);
+            UiText.Apply(settingsWindow); WindowUi.Show(settingsWindow, this);
         }
 
         void OnCaptureFrame()
@@ -353,7 +357,7 @@ namespace CodexAutoResume
             SetStatus(state == ButtonState.Running ? "Codex 正在运行" : state == ButtonState.Resume ? "检测到暂停" : state == ButtonState.Send ? "等待发送" : state == ButtonState.VoiceClose ? "语音模式 · 等待操作" : state == ButtonState.Voice ? "等待操作" : "正在识别 Codex");
         }
         void RecordVerified(int previous)
-        { if (gate.Verified > previous) AppendVisible("已恢复", "recovery"); RefreshUi(); }
+        { if (gate.Verified > previous) { CancelSchedule(false); AppendVisible("已恢复", "recovery"); } RefreshUi(); }
 
         Form UpdateDialogOwner()
         { return settingsWindow != null && !settingsWindow.IsDisposed ? settingsWindow : this; }
@@ -372,7 +376,7 @@ namespace CodexAutoResume
                 announcedVersions.Add(update.Version);
                 using (UpdatePrompt prompt = new UpdatePrompt(update, Portable.Version))
                 {
-                    DialogResult result = prompt.ShowDialog(UpdateDialogOwner());
+                    DialogResult result = WindowUi.Modal(prompt, UpdateDialogOwner());
                     if (result == DialogResult.Ignore) { preferences.SkippedVersion = update.Version; SavePreferences(); }
                     if (result == DialogResult.OK) await InstallUpdateAsync(update);
                 }
@@ -387,7 +391,7 @@ namespace CodexAutoResume
         }
         ResumeMemory RememberForUpdate()
         {
-            ResumeMemory memory = new ResumeMemory { Monitoring = monitoring, Automatic = automatic.Checked, Background = background.Checked };
+            ResumeMemory memory = new ResumeMemory { Monitoring = monitoring, Automatic = automatic.Checked && !resumeSchedule.Active, Background = background.Checked };
             if (target != null && !target.Demo)
             {
                 memory.Window = target.Window.ToInt64(); memory.ProcessId = target.ProcessId; memory.ProcessStart = target.ProcessStart; memory.ProcessPath = target.ProcessPath;
@@ -405,7 +409,7 @@ namespace CodexAutoResume
                 Label message = new Label { Dock = DockStyle.Top, Height = 54, Padding = new Padding(14), Text = "正在下载并校验更新…" };
                 progress.Controls.Add(new ProgressBar { Dock = DockStyle.Top, Height = 20, Style = ProgressBarStyle.Marquee }); progress.Controls.Add(message);
                 Button cancelButton = UiButton("取消", delegate { cancel.Cancel(); }); cancelButton.Dock = DockStyle.Bottom; progress.Controls.Add(cancelButton);
-                progress.FormClosing += delegate { if (!finished) cancel.Cancel(); }; UiText.Apply(progress); progress.Show(this);
+                progress.FormClosing += delegate { if (!finished) cancel.Cancel(); }; UiText.Apply(progress); WindowUi.Show(progress, this);
                 try
                 {
                     string candidate = await Updates.DownloadAsync(update, cancel.Token);

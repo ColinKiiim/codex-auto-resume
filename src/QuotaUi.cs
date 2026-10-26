@@ -14,11 +14,11 @@ namespace CodexAutoResume
         DateTime quotaContextRetry;
         QuotaLevel quotaOperationLevel;
         ButtonState quotaQuietState;
-        Func<Target, string, ComposerContext, string, DateTime, CancellationToken, Task<ComposerReply>> composerRunner = ComposerBridge.RunAsync;
+        Func<Target, string, ComposerContext, string, DateTime, CancellationToken, Task<ComposerReply>> composerRunner = null;
         bool QuotaEnabled { get { return preferences.QuotaControl && automatic.Checked; } }
         bool QuotaSquareWake { get { return QuotaEnabled && QuotaNow == QuotaLevel.Low && quotaPause.Phase == QuotaPhase.None && !quotaPause.ManualOverride && DateTime.UtcNow >= quotaContextRetry; } }
         QuotaLevel QuotaNow { get { return QuotaPolicy.Evaluate(usageSnapshot, usageError, preferences, DateTime.UtcNow); } }
-        bool QuotaAllowsNormal() { return !QuotaEnabled || !quotaPause.Owned && QuotaNow == QuotaLevel.Healthy; }
+        bool QuotaAllowsNormal() { return ScheduleAllows() && (!QuotaEnabled || !quotaPause.Owned && QuotaNow == QuotaLevel.Healthy); }
         bool QuotaCurrent(Target connected, int revision)
         { string why; return !IsDisposed && monitoring && QuotaEnabled && generation == revision && target == connected && connected.ValidateIdentity(out why); }
         void CancelQuota()
@@ -53,7 +53,9 @@ namespace CodexAutoResume
                 try
                 {
                     DateTime expires = usageSnapshot == null ? DateTime.UtcNow : usageSnapshot.FetchedUtc.AddSeconds(30);
-                    return await composerRunner(connected, operation, context, preferences.ContinuePrompt, expires, cancellation.Token);
+                    if (composerRunner != null) return await composerRunner(connected, operation, context, preferences.ContinuePrompt, expires, cancellation.Token);
+                    return await ComposerBridge.RunAsync(connected, operation, context, preferences.ContinuePrompt, expires, cancellation.Token,
+                        operation == "submit" && resumeSchedule.Active ? (DateTime?)resumeSchedule.DueUtc : null);
                 }
                 finally { if (quotaCancellation == cancellation) quotaCancellation = null; }
             }
@@ -80,7 +82,7 @@ namespace CodexAutoResume
                     else { quotaPause.Phase = QuotaPhase.Resuming; quotaPause.ActionAt = DateTime.UtcNow; }
                     bool sent = BackgroundClick.Send(connected.Window, fresh == null ? WindowCapture.Bounds(connected.Window) : fresh.Bounds, center, delegate {
                         InputSnapshot after = inputReader();
-                        return QuotaCurrent(connected, revision) && QuotaNow == needed && input.Valid && after.Valid && !after.Held &&
+                        return QuotaCurrent(connected, revision) && (expected == ButtonState.Running || ScheduleAllows()) && QuotaNow == needed && input.Valid && after.Valid && !after.Held &&
                             after.IdleMilliseconds >= RecoveryWindow.QuietMilliseconds && input.Tick == after.Tick && Native.Title(connected.Window) == title &&
                             (fresh == null ? Native.Uncovered(connected.Window, crop) : fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2);
                     });
@@ -116,6 +118,7 @@ namespace CodexAutoResume
             { stabilityTimer.Stop(); SetStatus("等待有效额度，暂不自动点击"); return true; }
             if (quotaPause.ManualOverride) return true;
             bool stopping = !quotaPause.Owned && level == QuotaLevel.Low;
+            if (!stopping && !ScheduleAllows()) return true;
             if (stopping && d.State != ButtonState.Running)
             { stabilityTimer.Stop(); SetStatus("额度不足，等待运行方块后暂停"); return true; }
             if (!stopping && d.State != ButtonState.Resume && d.State != ButtonState.Send && d.State != ButtonState.Voice)
@@ -138,7 +141,7 @@ namespace CodexAutoResume
                     else { quotaPause.Reset(); SetStatus("点击前状态变化，已取消本次点击并重新观察"); }
                     return true;
                 }
-                if (QuotaNow != QuotaLevel.Healthy) return true;
+                if (QuotaNow != QuotaLevel.Healthy || !ScheduleAllows()) return true;
                 if (d.State == ButtonState.Resume)
                 {
                     if (await ClickQuota(connected, revision, ButtonState.Resume, crop, d)) SetStatus("额度恢复，等待运行确认");
@@ -166,27 +169,31 @@ namespace CodexAutoResume
 
         void AddQuotaSettings(FlowLayoutPanel panel)
         {
-            panel.Controls.Add(UiLabel("额度自动暂停与恢复（实验性）"));
+            panel.Controls.Add(UiLabel("额度自动暂停与恢复"));
             var enabled = new CheckBox { Name = "QuotaControl", Text = "启用额度控制（需开启自动恢复）", AutoSize = true, Checked = preferences.QuotaControl };
             var five = new CheckBox { Text = "5h", AutoSize = true, Checked = preferences.QuotaFiveHour };
             var week = new CheckBox { Text = "周额度", AutoSize = true, Checked = preferences.QuotaWeekly };
-            var threshold = new NumericUpDown { Minimum = 0, Maximum = 99, Value = preferences.QuotaThreshold, Width = 64 };
+            var fiveThreshold = new NumericUpDown { Name = "FiveHourThreshold", Minimum = 0, Maximum = 99, Value = preferences.FiveHourThreshold, Width = 64 };
+            var weekThreshold = new NumericUpDown { Name = "WeeklyThreshold", Minimum = 0, Maximum = 99, Value = preferences.WeeklyThreshold, Width = 64 };
             var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            row.Controls.Add(five); row.Controls.Add(week); row.Controls.Add(UiLabel("剩余 ≤")); row.Controls.Add(threshold); row.Controls.Add(UiLabel("% 时暂停"));
+            row.Controls.Add(five); row.Controls.Add(UiLabel("剩余 ≤")); row.Controls.Add(fiveThreshold); row.Controls.Add(UiLabel("% 时暂停"));
+            var weekRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            weekRow.Controls.Add(week); weekRow.Controls.Add(UiLabel("剩余 ≤")); weekRow.Controls.Add(weekThreshold); weekRow.Controls.Add(UiLabel("% 时暂停"));
             var prompt = new TextBox { Name = "ContinuePrompt", Multiline = true, AcceptsReturn = true, MaxLength = 2048, Width = 480, Height = 62, Text = preferences.ContinuePrompt, ScrollBars = ScrollBars.Vertical };
-            panel.Controls.Add(enabled); panel.Controls.Add(row);
+            panel.Controls.Add(enabled); panel.Controls.Add(row); panel.Controls.Add(weekRow);
             panel.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(490, 0), ForeColor = Color.DimGray,
                 Text = "任一所选额度不足即暂停，全部恢复才继续\n等待时画面每分钟采样，额度正常每 10 秒查询\n后台输入不可用时允许切回 Codex 输入；已有草稿时等待" });
             panel.Controls.Add(UiLabel("无暂停三角形时补发的继续指令")); panel.Controls.Add(prompt);
             EventHandler changed = delegate {
                 bool owned = quotaPause.Owned;
                 CancelQuota(); preferences.QuotaFiveHour = five.Checked; preferences.QuotaWeekly = week.Checked;
-                preferences.QuotaThreshold = (int)threshold.Value;
+                preferences.QuotaFiveHourThreshold = (int)fiveThreshold.Value;
+                preferences.QuotaWeeklyThreshold = (int)weekThreshold.Value;
                 preferences.QuotaControl = enabled.Checked && (five.Checked || week.Checked);
                 if (owned) automatic.Checked = false;
                 nextMonitor = DateTime.MinValue; SavePreferences();
             };
-            enabled.CheckedChanged += changed; five.CheckedChanged += changed; week.CheckedChanged += changed; threshold.ValueChanged += changed;
+            enabled.CheckedChanged += changed; five.CheckedChanged += changed; week.CheckedChanged += changed; fiveThreshold.ValueChanged += changed; weekThreshold.ValueChanged += changed;
             prompt.TextChanged += delegate {
                 CancelQuota(); if (automatic.Checked) automatic.Checked = false;
                 string text = prompt.Text.Replace("\r\n", "\n");

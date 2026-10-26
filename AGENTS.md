@@ -28,6 +28,7 @@
 
 ## UI copy
 
+- Unless the human user explicitly requests an experimental label for a feature, do not add “实验性”, “实验” or “experimental” tags to feature names, UI or current usage documentation. The user set this default on 2026-10-26. Describe actual limitations and unfinished validation factually in the appropriate records; incomplete validation alone is not authorization to add a tag. Preserve historical release snapshots as evidence of their own versions.
 - Short Chinese UI labels and explanations that are not prose paragraphs omit a final Chinese full stop (。). Keep meaningful punctuation inside paragraphs.
 - Retain native system window chrome; bitmap preview nonclient rendering is not evidence that the actual system frame needs replacement.
 - Describe validation by the behaviors and environments covered. If reporting a numeric test total, call it an assertion count and explain material parameterized repetition; do not present thousands of repeated assertions as thousands of independent scenarios or as coverage of untested real devices.
