@@ -6,7 +6,7 @@
 
 **Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. Compact footer bars also show the current login's remaining quota and reset times. One EXE, no API key.
 
-> Version 1.1.16 includes opt-in quota control. Real Codex pause/input end-to-end acceptance and the original occlusion check remain incomplete; an unverifiable original conversation waits for manual handling. See the [version notes](docs/releases/v1.1.16.md) for tested scope and limitations.
+> Version 1.1.17 adds scoped recovery, independent timed instructions and persistent recovery history. Real Codex pause/recovery and foreground input were exercised on this PC. See the [version notes](docs/releases/v1.1.17.md) for boundaries.
 
 ## Pause on low quota, continue after recovery
 
@@ -29,6 +29,14 @@ A schedule does not pause a running task or create messages. Confirmed recovery 
 Auxiliary windows open centered near their owner and stay within the monitor work area. Settings can scroll to the final control.
 
 It helps when an interrupted task exposes a resume button. It does not change server capacity, account quotas, or model availability. Detection is based on button graphics, not the text or cause of an error.
+
+## Scope, timed instructions and history
+
+Read projects/chats in Settings, select a scope and apply it, then enable Auto-resume. Project scope polls its chats with sidebar/toolbar/document checks. Native navigation may activate Codex before a single switch without moving the pointer. Reconfirm the scope after process restart or uncertain navigation.
+
+One-time instructions are separate from the recovery time gate: each task stores its own deadline, target and prompt. Due tasks can return to their bound chat; tasks for one chat retain deadline order and wait for a safe empty editor, verified account, enabled quota conditions and idle input. Rebind after restart. Uncertain outcomes never replay and hold later tasks for that target until review or cancellation.
+
+The default continuation prompt does not overwrite saved task prompts. Local `timed-instructions.json` stores task text and target titles; account bindings use fingerprints. Hover over the recovery counter for up to four records from the last 24 hours or click for all saved recoveries. Settings and records share the main window with monitoring and Pause available.
 
 ## Codex at capacity: when does this tool help?
 
@@ -66,7 +74,7 @@ Source builds also create `release/CodexAutoResume.exe`. Download the executable
 
 Automatic localization follows window movement. Manual calibration remains available. Multiple target windows require a selection.
 
-Background mode uses Windows Graphics Capture and window messages without moving the system pointer or activating Codex. Support depends on the target rendering fresh frames and accepting those messages. Minimized windows wait until restored. Static content retains the last observation without a timeout warning. Actions require an independent fresh acquisition; only a post-click square frame confirms recovery. The yellow capture outline is a Windows indicator.
+Background mode uses Windows Graphics Capture and window messages without moving the system pointer or activating Codex. Support depends on the target rendering fresh frames and accepting those messages. Minimized windows wait until restored. Static content retains the last observation without a timeout warning. Actions require an independent fresh acquisition; only a post-click square frame confirms recovery. CAR requests system-authorized borderless capture. Permission, API availability and other capture clients determine the actual system border.
 
 ## Monitoring and privacy
 

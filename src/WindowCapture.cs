@@ -67,6 +67,36 @@ namespace CodexAutoResume
             try { IDisposable close = value as IDisposable; if (close != null) close.Dispose(); }
             finally { if (Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
         }
+        static volatile bool borderlessAllowed;
+        internal static volatile string BorderStatus = "尚未请求无边框捕获";
+
+        // Request outside the capture lock; a system consent prompt must never
+        // stall sampling. Unsupported systems retain the ordinary capture path.
+        internal static async Task RequestBorderlessAsync()
+        {
+            try { await RequestBorderlessCoreAsync(); }
+            catch (Exception e) { BorderStatus = "无边框捕获不可用（" + e.GetType().Name + "），使用系统边框"; }
+        }
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static async Task RequestBorderlessCoreAsync()
+        {
+            var request = GraphicsCaptureAccess.RequestAccessAsync(GraphicsCaptureAccessKind.Borderless);
+            for (int i = 0; i < 80 && request.Status == Windows.Foundation.AsyncStatus.Started; i++) await Task.Delay(100);
+            if (request.Status == Windows.Foundation.AsyncStatus.Started)
+            { request.Cancel(); BorderStatus = "无边框权限未确认，使用系统边框"; return; }
+            var result = request.GetResults();
+            borderlessAllowed = result == Windows.Security.Authorization.AppCapabilityAccess.AppCapabilityAccessStatus.Allowed;
+            BorderStatus = borderlessAllowed ? "无边框捕获已获授权；实际边框由系统决定" : "无边框权限：" + result + "；使用系统边框";
+
+        }
+        static void ApplyBorderPolicy(GraphicsCaptureSession session)
+        {
+            if (!borderlessAllowed) return;
+            try { SetBorderless(session); }
+            catch (Exception e) { BorderStatus = "无边框设置失败（" + e.GetType().Name + "），使用系统边框"; }
+        }
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static void SetBorderless(GraphicsCaptureSession session) { session.IsBorderRequired = false; }
         static long sequence;
         static readonly object captureLock = new object();
         static D3dDevice sharedDevice;
@@ -74,6 +104,7 @@ namespace CodexAutoResume
         static GraphicsCaptureItem activeItem;
         static Direct3D11CaptureFramePool activePool;
         static GraphicsCaptureSession activeSession;
+        static bool activeBorderlessPolicy;
         static Size activeSize;
         static Bitmap latestImage;
         static DateTime latestContentAt;
@@ -139,7 +170,7 @@ namespace CodexAutoResume
         {
             if (delayedWindow != window) consecutiveTimeouts = 0;
             if (activeSession == null && delayedWindow == window && DateTime.UtcNow < nextSessionAttempt) throw new InvalidOperationException("等待捕获重连间隔，监测继续");
-            if (activeWindow == window && activeSession != null && !streamClosed)
+            if (activeWindow == window && activeSession != null && !streamClosed && activeBorderlessPolicy == borderlessAllowed)
             {
                 if (activeSize != size)
                 { CloseCom(pendingFrame); pendingFrame = null; if (latestImage != null) { latestImage.Dispose(); latestImage = null; } activePool.Recreate(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, new Windows.Graphics.SizeInt32 { Width = size.Width, Height = size.Height }); activeSize = size; Interlocked.Increment(ref PoolRefreshes); }
@@ -160,6 +191,7 @@ namespace CodexAutoResume
                 activePool = Direct3D11CaptureFramePool.CreateFreeThreaded(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, activeItem.Size);
                 activePool.FrameArrived += OnFrameArrived; hasFrameHandler = true;
                 activeSession = activePool.CreateCaptureSession(activeItem);
+                activeBorderlessPolicy = borderlessAllowed; ApplyBorderPolicy(activeSession);
                 activeSession.StartCapture(); activeWindow = window; activeSize = size; Interlocked.Increment(ref SessionStarts);
             }
             catch { CloseStream(); throw; }
@@ -304,7 +336,7 @@ namespace CodexAutoResume
                 itemPtr = factory.CreateForWindow(window, ref itemId); item = (GraphicsCaptureItem)Marshal.GetObjectForIUnknown(itemPtr);
                 if (sharedDevice == null) sharedDevice = new D3dDevice();
                 pool = Direct3D11CaptureFramePool.CreateFreeThreaded(sharedDevice.Runtime, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, item.Size);
-                session = pool.CreateCaptureSession(item); session.StartCapture(); Interlocked.Increment(ref SessionStarts);
+                session = pool.CreateCaptureSession(item); ApplyBorderPolicy(session); session.StartCapture(); Interlocked.Increment(ref SessionStarts);
                 DateTime deadline = DateTime.UtcNow.AddSeconds(2);
                 while (DateTime.UtcNow < deadline)
                 {

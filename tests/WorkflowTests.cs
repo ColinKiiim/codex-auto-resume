@@ -19,6 +19,9 @@ namespace CodexAutoResume
         {
             if (args.Length == 1 && args[0] == "--composer-worker") return ComposerWorker.Run();
             Native.SetDpi(); DesktopIdentity.Initialize(); Application.EnableVisualStyles();
+            // Tests must never add fixture recoveries or settings to the user's profile.
+            string testData = Path.Combine(Path.GetTempPath(), "CAR-workflow-" + Guid.NewGuid().ToString("N"));
+            typeof(Portable).GetField("DataDirectory").SetValue(null, testData);
             string settings = Path.Combine(Portable.DataDirectory, "settings.json"); byte[] prior = File.Exists(settings) ? File.ReadAllBytes(settings) : null;
             int code = 1;
             using (var main = new MainForm())
@@ -87,6 +90,7 @@ namespace CodexAutoResume
                             Field<Button>(main, "toggle").PerformClick(); automatic.Checked = false; automatic.Checked = true;
                             Require(!Field<bool>(main, "monitoring"), "explicit pause remains paused after option changes");
                         }
+                        await TimedQueue(main);
                         await ComposerBoundary(main);
                         code = 0;
                     }
@@ -102,6 +106,41 @@ namespace CodexAutoResume
             var target = Field<Target>(main, "target");
             Field<ResumeSchedule>(main, "resumeSchedule").Arm(due, target.Window + ":" + target.ProcessId + ":" + target.ProcessStart,
                 DateTime.UtcNow, (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency, TimeZoneInfo.Local.Id);
+        }
+        static async Task TimedQueue(MainForm main)
+        {
+            var options = Field<UserPreferences>(main, "preferences"); options.LimitScope = false; options.QuotaControl = false;
+            Field<CheckBox>(main, "automatic").Checked = true;
+            if (!Field<bool>(main, "monitoring")) Field<Button>(main, "toggle").PerformClick();
+            Call(main, "CancelQuota");
+            var target = Field<Target>(main, "target");
+            main.GetType().GetField("usageTargetKey", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, UsageSource.TargetKey(target));
+            main.GetType().GetField("usageBusy", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, true);
+            main.GetType().GetField("usageSnapshot", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, new UsageSnapshot { AccountKey = "fixture-account", FetchedUtc = DateTime.UtcNow, Windows = new[] { new UsageWindow { Minutes = 300, Remaining = 90 }, new UsageWindow { Minutes = 10080, Remaining = 90 } } });
+            main.GetType().GetField("usageError", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, UsageError.None);
+            main.GetType().GetField("timedLoaded", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, true);
+            var items = Field<System.Collections.Generic.List<TimedInstruction>>(main, "timedInstructions"); items.Clear();
+            var sent = new System.Collections.Generic.List<string>();
+            Func<Target, string, ComposerContext, string, DateTime, System.Threading.CancellationToken, DateTime?, Task<ComposerReply>> runner = (t, op, context, prompt, expires, cancel, due) => {
+                if (op == "inspect") return Task.FromResult(new ComposerReply { Result = "Observed", Safe = true, Empty = true, Running = false, Context = new ComposerContext { Backend = "fixture", Conversation = "one", Editor = "new-editor", Title = "fixture" } });
+                sent.Add(prompt); return Task.FromResult(new ComposerReply { Result = prompt == "不明结果" ? "Uncertain" : "Submitted" });
+            };
+            main.GetType().GetField("timedRunner", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, runner);
+            var contextValue = new ComposerContext { Backend = "fixture", Conversation = "one", Editor = "one", Title = "fixture" };
+            foreach (string prompt in new[] { "任务一", "任务二", "不明结果" })
+            {
+                var item = new TimedInstruction { Id = Guid.NewGuid().ToString("N"), Prompt = prompt, DueUtc = DateTime.UtcNow.AddSeconds(-3 + items.Count), Zone = TimeZoneInfo.Local.Id, State = "等待执行", Context = contextValue, AccountKey = TimedInstructionPolicy.AccountFingerprint("fixture-account"), Window = target.Window.ToInt64(), ProcessId = target.ProcessId, ProcessStart = target.ProcessStart, ProcessPath = target.ProcessPath };
+                item.BoundUtc = DateTime.UtcNow; item.BoundClock = (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency; items.Add(item);
+            }
+            DateTime end = DateTime.UtcNow.AddSeconds(15);
+            while (sent.Count < 3 && DateTime.UtcNow < end) { Call(main, "TickTimedInstructions"); await Task.Delay(200); }
+            Require(sent.SequenceEqual(new[] { "任务一", "任务二", "不明结果" }), "multiple timed instructions use their own prompts in deadline order");
+            Require(items[0].State == "已完成" && items[1].State == "已完成" && items[2].State == "结果不明，请核对", "submitted tasks finish and uncertain submission is reserved");
+            for (int i = 0; i < 6; i++) { Call(main, "TickTimedInstructions"); await Task.Delay(200); }
+            Require(sent.Count == 3, "uncertain timed submission is not repeated");
+            main.GetType().GetField("timedRunner", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, null);
+            main.GetType().GetField("usageBusy", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, false);
+            items.Clear(); main.GetType().GetMethod("Stop", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(main, new object[] { "timed fixture complete" });
         }
         static async Task ComposerBoundary(MainForm main)
         {
@@ -138,8 +177,8 @@ namespace CodexAutoResume
                         // Real input protection remains enabled in the helper.
                         // Running this check while the user works must abort,
                         // rather than forcing the desktop into an idle state.
-                        bool guarded = submitted.Stage == "focus:ComposerUnavailable:activation-denied" || submitted.Stage == "inspect:ComposerUnavailable:input-or-target-changed" || submitted.Stage == "focus:ComposerUnavailable:focus-postflight";
-                        Require(submitted.Result == "Blocked" && guarded && count == 0 && editor.Text == "", "input activity or Windows activation denial aborts before input or send; result=" + submitted.Result + "; stage=" + submitted.Stage + "; fixture-messages=" + count + "; draft-length=" + editor.Text.Length);
+                        bool guarded = submitted.Stage == "focus:ComposerUnavailable:activation-denied" || submitted.Stage == "inspect:ComposerUnavailable:input-or-target-changed" || submitted.Stage == "focus:ComposerUnavailable:focus-postflight" || submitted.Stage == "write-preflight:ComposerUnavailable:value-pattern-unavailable";
+                        Require(submitted.Result == "Blocked" && guarded && count == 0 && editor.Text == "", "input activity, activation denial or unavailable ValuePattern aborts before input or send; result=" + submitted.Result + "; stage=" + submitted.Stage + "; fixture-messages=" + count + "; draft-length=" + editor.Text.Length);
                         Console.WriteLine("LIMITATION: successful foreground submission was not exercised; blocked by " + submitted.Stage);
                     }
                     int previous = count;

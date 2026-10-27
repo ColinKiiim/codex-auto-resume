@@ -39,6 +39,12 @@ namespace CodexAutoResume
             }
             finally { followLatest = follow; if (IsHandleCreated) { SendMessage(Handle, 11, new IntPtr(1), IntPtr.Zero); Invalidate(); } }
         }
+        internal void RestoreView(int first, int start, int length)
+        {
+            Select(Math.Min(start, TextLength), Math.Min(length, Math.Max(0, TextLength - start)));
+            if (IsHandleCreated) SendMessage(Handle, 0xB6, IntPtr.Zero, new IntPtr(first - FirstVisibleLine));
+            followLatest = false;
+        }
         void FollowAfterLayout()
         { if (IsHandleCreated && followLatest) { Select(TextLength, 0); ScrollToCaret(); SendMessage(Handle, 0x115, new IntPtr(7), IntPtr.Zero); } }
         protected override void OnFontChanged(EventArgs e) { base.OnFontChanged(e); FollowAfterLayout(); }

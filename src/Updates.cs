@@ -37,6 +37,7 @@ namespace CodexAutoResume
         public string SkippedVersion { get; set; }
         public string Language { get; set; }
         public bool QuotaControl { get; set; }
+        public bool LimitScope { get; set; }
         public bool QuotaFiveHour { get; set; }
         public bool QuotaWeekly { get; set; }
         public int QuotaThreshold { get; set; }

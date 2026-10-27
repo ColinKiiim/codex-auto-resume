@@ -15,6 +15,8 @@ namespace CodexAutoResume
         public string Editor { get; set; }
         public string Title { get; set; }
         public int Port { get; set; }
+        internal static bool SameConversation(ComposerContext a, ComposerContext b)
+        { return a != null && b != null && a.Backend == b.Backend && a.Conversation == b.Conversation && a.Title == b.Title && a.Port == b.Port; }
     }
     public sealed class ComposerRequest
     {

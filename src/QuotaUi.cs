@@ -28,7 +28,7 @@ namespace CodexAutoResume
         }
         void QuotaUsageChanged()
         {
-            if (quotaCancellation != null && (QuotaNow != quotaOperationLevel || quotaPause.AccountKey != null && quotaPause.AccountKey != (usageSnapshot == null ? null : usageSnapshot.AccountKey))) quotaCancellation.Cancel();
+            if (quotaCancellation != null && (QuotaNow != quotaOperationLevel || quotaPause.AccountKey != null && quotaPause.AccountKey != (usageSnapshot == null ? null : usageSnapshot.AccountKey) || timedAccount != null && timedAccount != TimedInstructionPolicy.AccountFingerprint(usageSnapshot == null ? null : usageSnapshot.AccountKey))) quotaCancellation.Cancel();
             if (QuotaEnabled && quotaPause.Phase == QuotaPhase.Waiting && QuotaNow == QuotaLevel.Healthy)
             { nextMonitor = DateTime.MinValue; quotaPause.NextSample = DateTime.MinValue; TickMonitor(); }
         }
@@ -65,9 +65,11 @@ namespace CodexAutoResume
             InputSnapshot input = inputReader();
             if (!input.Valid || input.Held || input.IdleMilliseconds < RecoveryWindow.QuietMilliseconds) return false;
             string title = Native.Title(connected.Window);
+            if (!QuotaCurrent(connected, revision) || !ScopeCheck(connected)) return false;
+            DateTime scopedBeforeCapture = DateTime.UtcNow;
             using (WindowFrame fresh = background.Checked ? await ReadBackground(connected, revision, true) : null)
             {
-                if (!QuotaCurrent(connected, revision)) return false;
+                if (!QuotaCurrent(connected, revision) || fresh != null && !ScopePolicy.FrameAfterBinding(preferences.LimitScope, fresh.ContentAt, scopedBeforeCapture)) return false;
                 Rectangle crop; string reason;
                 if (fresh != null ? !connected.LocateBackground(fresh, recognizer, null, out crop, out reason) : !connected.Locate(recognizer, null, out crop, out reason)) return false;
                 if (crop != observedCrop) return false;
@@ -82,7 +84,7 @@ namespace CodexAutoResume
                     else { quotaPause.Phase = QuotaPhase.Resuming; quotaPause.ActionAt = DateTime.UtcNow; }
                     bool sent = BackgroundClick.Send(connected.Window, fresh == null ? WindowCapture.Bounds(connected.Window) : fresh.Bounds, center, delegate {
                         InputSnapshot after = inputReader();
-                        return QuotaCurrent(connected, revision) && (expected == ButtonState.Running || ScheduleAllows()) && QuotaNow == needed && input.Valid && after.Valid && !after.Held &&
+                        return QuotaCurrent(connected, revision) && ScopeCheck(connected) && (expected == ButtonState.Running || ScheduleAllows()) && QuotaNow == needed && input.Valid && after.Valid && !after.Held &&
                             after.IdleMilliseconds >= RecoveryWindow.QuietMilliseconds && input.Tick == after.Tick && Native.Title(connected.Window) == title &&
                             (fresh == null ? Native.Uncovered(connected.Window, crop) : fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2);
                     });
@@ -129,10 +131,12 @@ namespace CodexAutoResume
             if (now < quotaContextRetry) { SetStatus("无法核实原对话，等待重试；可手动继续"); return true; }
             try
             {
-                ComposerReply composer = await ReadComposer(connected, "inspect", stopping ? null : quotaPause.Context);
+                if (!ScopeCheck(connected)) { ScheduleReason("等待确认指定范围"); SetStatus("等待确认指定范围"); return true; }
+                ComposerReply composer = await ReadComposer(connected, "inspect", null);
                 if (!QuotaCurrent(connected, revision)) return true;
-                if (composer.Result != "Observed" || composer.Context == null || !composer.Safe || (stopping ? !composer.Running : composer.Running))
-                { quotaContextRetry = DateTime.UtcNow.AddMinutes(1); SetStatus("无法核实原对话，等待重试；可手动继续"); return true; }
+                if (composer.Result != "Observed" || composer.Context == null || !composer.Safe || (stopping ? !composer.Running : composer.Running) ||
+                    !stopping && !ComposerContext.SameConversation(quotaPause.Context, composer.Context))
+                { ScheduleReason("等待原对话核验"); quotaContextRetry = DateTime.UtcNow.AddMinutes(1); SetStatus("无法核实原对话，等待重试；可手动继续"); return true; }
                 if (stopping)
                 {
                     quotaPause.Context = composer.Context; quotaPause.AccountKey = usageSnapshot.AccountKey;
@@ -141,14 +145,16 @@ namespace CodexAutoResume
                     else { quotaPause.Reset(); SetStatus("点击前状态变化，已取消本次点击并重新观察"); }
                     return true;
                 }
-                if (QuotaNow != QuotaLevel.Healthy || !ScheduleAllows()) return true;
+                if (QuotaNow != QuotaLevel.Healthy || !ScheduleAllows() || !ScopeCheck(connected)) return true;
+                quotaPause.Context = composer.Context;
                 if (d.State == ButtonState.Resume)
                 {
                     if (await ClickQuota(connected, revision, ButtonState.Resume, crop, d)) SetStatus("额度恢复，等待运行确认");
                     else { quotaPause.Phase = QuotaPhase.Waiting; SetStatus("点击前状态变化，已取消本次点击并重新观察"); }
                     return true;
                 }
-                if (!composer.Empty || quotaPause.ContinuationAttempted) { SetStatus("原对话有草稿或已尝试继续，请手动核对"); return true; }
+                if (!composer.Empty || quotaPause.ContinuationAttempted) { ScheduleReason(!composer.Empty ? "原对话有草稿" : "继续指令已尝试，请手动核对"); SetStatus("原对话有草稿或已尝试继续，请手动核对"); return true; }
+                ScheduleReason(null);
                 // Reserve before dispatch: timeout/partial write/unknown send may
                 // never cause another write, fallback or submission next tick.
                 quotaPause.ContinuationAttempted = true; quotaPause.Phase = QuotaPhase.Uncertain;
@@ -156,7 +162,10 @@ namespace CodexAutoResume
                 ComposerReply submitted = await ReadComposer(connected, "submit", quotaPause.Context);
                 if (!QuotaCurrent(connected, revision)) return true;
                 if (submitted.Result == "Submitted")
-                { quotaPause.Phase = QuotaPhase.Resuming; quotaPause.ActionAt = submissionStarted; gate.MarkAttempt(submissionStarted); SetStatus("已补发继续指令，等待运行确认"); }
+                {
+                    if (submitted.Running) { quotaPause.Phase = QuotaPhase.Resuming; quotaPause.ActionAt = submissionStarted; gate.MarkAttempt(submissionStarted); SetStatus("已补发继续指令，等待运行确认"); }
+                    else { quotaPause.Reset(); CancelSchedule(false); SetStatus("继续指令已确认发送，当前对话已空闲"); }
+                }
                 else SetStatus(submitted.Result == "Blocked" ? "无法安全补发继续指令，请手动继续" : "额度操作结果不明，请手动核对；不会重复发送");
             }
             catch

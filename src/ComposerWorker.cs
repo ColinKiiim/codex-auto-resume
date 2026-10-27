@@ -17,6 +17,7 @@ namespace CodexAutoResume
         ComposerContext Context { get; }
         ComposerReply Inspect();
         void Focus(bool background);
+        void VerifyWritable();
         void Write(string text);
         int MessageCount(string text);
         void Send();
@@ -119,6 +120,7 @@ namespace CodexAutoResume
                         }
                         reply = composer.Inspect();
                         if (!reply.Safe || !reply.Empty || reply.Running || !Valid(request, input.Tick) || Native.GetForegroundWindow() != foreground) throw new ComposerUnavailable("focus-postflight");
+                        stage = "write-preflight"; composer.VerifyWritable();
                         stage = "write"; mayHaveWritten = true; composer.Write(request.Prompt);
                         reply = composer.Inspect();
                         if (!reply.Safe || reply.Running || reply.Empty || !Valid(request, input.Tick) || Native.GetForegroundWindow() != foreground) throw new InvalidOperationException();
@@ -131,9 +133,22 @@ namespace CodexAutoResume
                         {
                             Thread.Sleep(150);
                             if (!Valid(request, input.Tick)) break;
-                            var after = composer.Inspect();
-                            if (after.Running && after.Empty && composer.MessageCount(request.Prompt) > before)
-                            { reply = after; reply.Result = "Submitted"; break; }
+                            try
+                            {
+                                var after = composer.Inspect();
+                                // A newly confirmed user bubble plus an empty
+                                // editor proves delivery even if a short reply
+                                // already completed before the running sample.
+                                if (after.Empty && composer.MessageCount(request.Prompt) > before)
+                                { reply = after; reply.Result = "Submitted"; break; }
+                            }
+                            catch (ElementNotAvailableException) { /* Provider rebuilding after our own send; read only. */ }
+                            catch (ComposerUnavailable error)
+                            {
+                                if (!error.Message.StartsWith("editor-count-", StringComparison.Ordinal)) throw;
+                                // No actions follow this transient state. Wait
+                                // for the same conversation's new editor only.
+                            }
                         }
                     }
                     else if (request.Operation != "inspect") throw new InvalidOperationException();
@@ -154,9 +169,10 @@ namespace CodexAutoResume
     {
         readonly ComposerRequest request;
         readonly AutomationElement root;
-        readonly AutomationElement editor;
+        AutomationElement editor;
         readonly ComposerContext context;
         string written;
+        bool sendAttempted;
         internal AccessibleComposer(ComposerRequest request)
         {
             this.request = request; root = AutomationElement.FromHandle(new IntPtr(request.Window));
@@ -227,15 +243,47 @@ namespace CodexAutoResume
             if (buttons.Length != 1) throw new InvalidOperationException();
             return buttons[0];
         }
+        static AutomationElement[] RawChildren(AutomationElement parent)
+        {
+            var result = new List<AutomationElement>(); var raw = TreeWalker.RawViewWalker;
+            for (var child = raw.GetFirstChild(parent); child != null; child = raw.GetNextSibling(child))
+            { if (result.Count >= 8) throw new ComposerUnavailable("editor-structure-limit"); result.Add(child); }
+            return result.ToArray();
+        }
+        bool CodexPlaceholder(string text)
+        {
+            if (CodexDocument() == null || text != editor.Current.Name + "\n") return false;
+            // The observed Codex provider exposes generated placeholder text as
+            // Value/Text. Prove its raw empty-only wrapper and every descendant;
+            // matching the label alone must never make a draft look empty.
+            var root = RawChildren(editor);
+            if (root.Length != 1 || root[0].Current.ControlType != ControlType.Group || root[0].Current.ClassName != "placeholder" ||
+                root[0].Current.IsContentElement || root[0].Current.IsControlElement || root[0].Current.IsKeyboardFocusable) return false;
+            var content = RawChildren(root[0]);
+            if (content.Length != 2 || content[0].Current.ControlType != ControlType.Group || content[0].Current.ClassName != "" ||
+                content[0].Current.IsContentElement || content[0].Current.IsControlElement || content[1].Current.ControlType != ControlType.Text ||
+                content[1].Current.ClassName != "ProseMirror-trailingBreak" || content[1].Current.Name != "\n" || RawChildren(content[1]).Length != 0) return false;
+            var placeholder = RawChildren(content[0]);
+            return placeholder.Length == 1 && placeholder[0].Current.ControlType == ControlType.Text && placeholder[0].Current.ClassName == "" &&
+                placeholder[0].Current.Name == editor.Current.Name && RawChildren(placeholder[0]).Length == 0;
+        }
         string Text()
         {
-            object pattern;
-            if (editor.TryGetCurrentPattern(ValuePattern.Pattern, out pattern)) return ((ValuePattern)pattern).Current.Value;
-            if (editor.TryGetCurrentPattern(TextPattern.Pattern, out pattern)) return ((TextPattern)pattern).DocumentRange.GetText(-1).TrimEnd('\r', '\n');
-            throw new InvalidOperationException();
+            object pattern; string text;
+            if (editor.TryGetCurrentPattern(ValuePattern.Pattern, out pattern)) text = ((ValuePattern)pattern).Current.Value;
+            else if (editor.TryGetCurrentPattern(TextPattern.Pattern, out pattern)) text = ((TextPattern)pattern).DocumentRange.GetText(-1).TrimEnd('\r', '\n');
+            else throw new InvalidOperationException();
+            return CodexPlaceholder(text) ? "" : text;
         }
         public ComposerReply Inspect()
         {
+            if (sendAttempted)
+            {
+                editor = SingleEditor(); ComposerContext fresh = BuildContext();
+                if (fresh.Backend != context.Backend || fresh.Title != context.Title || fresh.Conversation != context.Conversation)
+                    throw new ComposerUnavailable("conversation-after-send");
+                context.Editor = fresh.Editor;
+            }
             Check();
             // Attachments, dialogs, questions or voice controls block the whole
             // transaction. Unknown provider structure remains unsupported.
@@ -250,9 +298,32 @@ namespace CodexAutoResume
             Check(); if (background) throw new NotSupportedException();
             // UIA SetFocus is itself the foreground fallback; some providers
             // activate their window through this accessibility operation.
+            InputSnapshot input = Native.ReadInput();
+            if (!ComposerWorker.Valid(request, input.Tick)) throw new ComposerUnavailable("input-before-focus");
             editor.SetFocus();
+            DateTime until = DateTime.UtcNow.AddMilliseconds(1500);
+            do
+            {
+                if (!ComposerWorker.Valid(request, input.Tick)) throw new ComposerUnavailable("input-during-focus");
+                try
+                {
+                    editor = SingleEditor(); ComposerContext fresh = BuildContext();
+                    if (fresh.Backend != context.Backend || fresh.Title != context.Title || fresh.Conversation != context.Conversation)
+                        throw new ComposerUnavailable("conversation-during-focus");
+                    if (Native.GetForegroundWindow() == new IntPtr(request.Window) && editor.Current.HasKeyboardFocus)
+                    { context.Editor = fresh.Editor; return; }
+                }
+                catch (ElementNotAvailableException) { }
+                Thread.Sleep(50);
+            } while (DateTime.UtcNow < until);
             if (Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new ComposerUnavailable("activation-denied");
-            if (!editor.Current.HasKeyboardFocus) throw new ComposerUnavailable("editor-focus-denied");
+            throw new ComposerUnavailable("editor-focus-denied");
+        }
+        public void VerifyWritable()
+        {
+            Check(); object pattern;
+            if (!editor.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) || ((ValuePattern)pattern).Current.IsReadOnly)
+                throw new ComposerUnavailable("value-pattern-unavailable");
         }
         public void Write(string text)
         {
@@ -260,16 +331,63 @@ namespace CodexAutoResume
             object pattern;
             if (!editor.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) || ((ValuePattern)pattern).Current.IsReadOnly) throw new NotSupportedException();
             written = text; ((ValuePattern)pattern).SetValue(text);
-            if (Text() != text) throw new InvalidOperationException();
+            // Codex replaces the accessibility editor after SetValue. Rebind
+            // only after our single write, to the same proven conversation,
+            // and require exact readback before allowing Send.
+            for (int n = 0; n < 5; n++)
+            {
+                try
+                {
+                    if (!ComposerWorker.Valid(request, null)) throw new ComposerUnavailable("target-after-write");
+                    editor = SingleEditor(); ComposerContext fresh = BuildContext();
+                    if (fresh.Backend != context.Backend || fresh.Title != context.Title || fresh.Conversation != context.Conversation)
+                        throw new ComposerUnavailable("conversation-after-write");
+                    if (Text() == text) { context.Editor = fresh.Editor; return; }
+                }
+                catch (ElementNotAvailableException) { }
+                Thread.Sleep(100);
+            }
+            throw new ComposerUnavailable("write-readback-mismatch");
+        }
+        static bool BubbleText(AutomationElement element, System.Text.StringBuilder value, int depth, ref int count)
+        {
+            if (depth > 12 || ++count > 512 || value.Length > 4096) return false;
+            var info = element.Current;
+            if (info.ControlType == ControlType.Text) { value.Append(info.Name); return true; }
+            if (info.ControlType != ControlType.Group) return false;
+            var raw = TreeWalker.RawViewWalker;
+            for (var child = raw.GetFirstChild(element); child != null; child = raw.GetNextSibling(child))
+                if (!BubbleText(child, value, depth + 1, ref count)) return false;
+            return true;
         }
         public int MessageCount(string text)
-        { Check(); return Elements(ControlType.Text).Count(e => e.Current.Name == text); }
+        {
+            Check(); var texts = Elements(ControlType.Text);
+            if (CodexDocument() == null) return texts.Count(e => e.Current.Name == text);
+            var bubbles = new HashSet<string>(); int matches = 0;
+            foreach (var part in texts.Where(e => e.Current.Name.Length > 0 && text.Contains(e.Current.Name)))
+            {
+                var parent = TreeWalker.RawViewWalker.GetParent(part);
+                for (int n = 0; parent != null && n < 8; n++, parent = TreeWalker.RawViewWalker.GetParent(parent))
+                {
+                    string css = parent.Current.ClassName;
+                    if (!css.Split(' ').Contains("bg-user-message") || !css.Split(' ').Contains("text-user-message")) continue;
+                    if (bubbles.Add(Id(parent)))
+                    {
+                        int nodes = 0; var value = new System.Text.StringBuilder();
+                        if (BubbleText(parent, value, 0, ref nodes) && value.ToString() == text) matches++;
+                    }
+                    break;
+                }
+            }
+            return matches;
+        }
         public void Send()
         {
-            Check(); if (String.IsNullOrEmpty(written) || Text() != written || !Inspect().Safe || Inspect().Running || Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new InvalidOperationException();
+            Check(); if (sendAttempted || String.IsNullOrEmpty(written) || Text() != written || !Inspect().Safe || Inspect().Running || Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new InvalidOperationException();
             var button = SendButton(); object pattern;
             if (!button.TryGetCurrentPattern(InvokePattern.Pattern, out pattern)) throw new NotSupportedException();
-            ((InvokePattern)pattern).Invoke();
+            sendAttempted = true; ((InvokePattern)pattern).Invoke();
         }
         public void Dispose() { }
     }

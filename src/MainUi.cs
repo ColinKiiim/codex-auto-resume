@@ -30,8 +30,12 @@ namespace CodexAutoResume
         bool questionPreview;
         DateTime previewContentAt;
         readonly ToolTip tips = new ToolTip();
-        Form settingsWindow, activityWindow;
-        TextBox activityView;
+        Form settingsWindow;
+        Panel recordsPage;
+        ProgressHistory recordsView;
+        Button recordsPause, settingsPause;
+        bool showingRecoveryRecords;
+        int recoveryRecordPosition, activityRecordPosition, recoveryRecordFirst, activityRecordFirst, recoveryRecordSelection, activityRecordSelection;
         bool loadingOptions, checkingUpdate, installingUpdate, shownOnce;
         readonly HashSet<string> announcedVersions = new HashSet<string>();
         DateTime nextUpdateCheck = DateTime.UtcNow.AddSeconds(5), nextFrameDispatch;
@@ -100,8 +104,13 @@ namespace CodexAutoResume
             activityLink.LinkClicked += delegate { ShowActivity(); }; history.Controls.Add(activityLink, 1, 0);
             recentLog.BackColor = BackColor; recentLog.Font = new Font(Font.FontFamily, 9); recentLog.WordWrap = false;
             history.Controls.Add(recentLog, 0, 1); history.SetColumnSpan(recentLog, 2); layout.Controls.Add(history, 0, 4);
+            recoveryCount.Cursor = Cursors.Hand;
+            recoveryCount.Click += delegate { ShowRecords(true); };
+            tips.SetToolTip(recoveryCount, RecoveryPreview());
+            recoveryCount.MouseEnter += delegate { tips.SetToolTip(recoveryCount, RecoveryPreview()); };
             recoveryCount.AutoSize = false; recoveryCount.Dock = DockStyle.Fill; recoveryCount.Margin = Padding.Empty; recoveryCount.TextAlign = ContentAlignment.MiddleLeft;
             InitializeUsageFooter(layout); Controls.Add(layout);
+            InitializeRecordsPage();
             stabilityTimer.Tick += delegate { if (monitoring && automatic.Checked && (lastObservedState == ButtonState.Resume || QuotaSquareWake && lastObservedState == ButtonState.Running)) TickMonitor(); else stabilityTimer.Stop(); };
             questionTimer.Tick += delegate { if (monitoring && questions.Waiting) TickMonitor(); else questionTimer.Stop(); };
             frameTimer.Tick += delegate { DispatchFrame(); };
@@ -167,6 +176,8 @@ namespace CodexAutoResume
             tips.SetToolTip(targetName, title);
             UiText.Set(modeName, background.Checked ? "后台监测" : "前台监测");
             UiText.Set(recoveryCount, "本轮已恢复 " + gate.Verified + " 次");
+            if (recordsPause != null) { UiText.Set(recordsPause, monitoring ? "暂停监测" : "继续监测"); recordsPause.Enabled = toggle.Enabled; }
+            if (settingsPause != null && !settingsPause.IsDisposed) { UiText.Set(settingsPause, monitoring ? "暂停监测" : "继续监测"); settingsPause.Enabled = toggle.Enabled; }
             previewTime.Text = preview.Image == null ? "" : previewContentAt == DateTime.MinValue ? "—" : previewContentAt.ToLocalTime().ToString("HH:mm:ss");
         }
 
@@ -177,7 +188,6 @@ namespace CodexAutoResume
             UiText.Apply(this); RefreshUi(); UiText.Set(status, statusSource);
             SetPreviewKind(questionPreview);
             recentLog.UpdateHistory(UiText.Get(String.Join(Environment.NewLine, recentEvents.ToArray())), true);
-            if (activityView != null && !activityView.IsDisposed) activityView.Text = UiText.Get(logBox.Text);
             tips.SetToolTip(preview, UiText.English ? "Latest captured area; click to enlarge" : "最近识别的局部画面；点击放大查看");
             RenderUsage(); SavePreferences();
         }
@@ -230,16 +240,64 @@ namespace CodexAutoResume
             preferences.Background = background.Checked; preferences.CropSize = (int)cropSize.Value;
             try { preferences.Save(); } catch (Exception e) { journal.Write("diagnostics.log", "settings-error", e.GetType().Name, DateTime.UtcNow); }
         }
-        void ShowActivity()
+        string RecoveryHistoryPath { get { return Path.Combine(Portable.DataDirectory, "recovery-history.txt"); } }
+        void SaveRecovery(DateTime now)
         {
-            if (activityWindow != null && !activityWindow.IsDisposed) { activityWindow.Activate(); return; }
-            activityWindow = new Form { Text = "活动记录", Font = Font, ClientSize = new Size(620, 360), StartPosition = FormStartPosition.CenterParent, Icon = Icon };
-            activityView = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = UiText.Get(logBox.Text) };
-            activityWindow.Controls.Add(activityView); activityWindow.FormClosed += delegate { activityView = null; }; UiText.Apply(activityWindow); WindowUi.Show(activityWindow, this);
+            try { Directory.CreateDirectory(Portable.DataDirectory); File.AppendAllText(RecoveryHistoryPath, now.ToUniversalTime().ToString("O") + Environment.NewLine); }
+            catch (Exception e) { journal.Write("diagnostics.log", "recovery-history-error", e.GetType().Name, DateTime.UtcNow); }
         }
+        System.Collections.Generic.List<DateTime> LoadRecoveries()
+        {
+            var result = new System.Collections.Generic.List<DateTime>();
+            try
+            {
+                if (File.Exists(RecoveryHistoryPath)) foreach (string line in File.ReadLines(RecoveryHistoryPath))
+                { DateTime value; if (DateTime.TryParse(line, null, System.Globalization.DateTimeStyles.RoundtripKind, out value)) result.Add(value.ToUniversalTime()); }
+            }
+            catch (Exception e) { journal.Write("diagnostics.log", "recovery-history-error", e.GetType().Name, DateTime.UtcNow); }
+            result.Sort(); result.Reverse(); return result;
+        }
+        string RecoveryPreview()
+        {
+            var lines = new System.Collections.Generic.List<string>(); DateTime cutoff = DateTime.UtcNow.AddHours(-24);
+            foreach (DateTime item in LoadRecoveries())
+                if (item >= cutoff && item <= DateTime.UtcNow) { lines.Add(item.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "  已恢复"); if (lines.Count == 4) break; }
+            return lines.Count == 0 ? "最近 24 小时没有恢复记录" : "最近 24 小时的恢复记录\n" + String.Join("\n", lines.ToArray());
+        }
+        void InitializeRecordsPage()
+        {
+            recordsPage = new Panel { Dock = DockStyle.Fill, BackColor = BackColor, Padding = new Padding(24, 18, 24, 18), Visible = false };
+            var heading = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false };
+            heading.Controls.Add(UiButton("返回监测", delegate { recordsPage.Visible = false; }));
+            heading.Controls.Add(UiButton("恢复记录", delegate { ShowRecords(true); }));
+            heading.Controls.Add(UiButton("全部活动", delegate { ShowRecords(false); }));
+            recordsPause = UiButton("暂停监测", delegate { Toggle(); RefreshUi(); }); heading.Controls.Add(recordsPause);
+            recordsView = new ProgressHistory { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = false };
+            recordsPage.Controls.Add(recordsView); recordsPage.Controls.Add(heading); Controls.Add(recordsPage);
+        }
+        void ShowRecords(bool recovery)
+        {
+            if (recordsView.IsHandleCreated)
+            {
+                if (showingRecoveryRecords) { recoveryRecordPosition = recordsView.SelectionStart; recoveryRecordFirst = recordsView.FirstVisibleLine; recoveryRecordSelection = recordsView.SelectionLength; }
+                else { activityRecordPosition = recordsView.SelectionStart; activityRecordFirst = recordsView.FirstVisibleLine; activityRecordSelection = recordsView.SelectionLength; }
+            }
+            showingRecoveryRecords = recovery;
+            if (recovery)
+            {
+                var entries = LoadRecoveries(); var lines = new System.Collections.Generic.List<string>();
+                foreach (DateTime item in entries) lines.Add(item.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "  已恢复");
+                recordsView.Text = lines.Count == 0 ? "暂无恢复记录" : String.Join(Environment.NewLine, lines.ToArray());
+            }
+            else recordsView.Text = UiText.Get(logBox.Text);
+            recordsPage.Visible = true; recordsPage.BringToFront();
+            recordsView.RestoreView(recovery ? recoveryRecordFirst : activityRecordFirst, recovery ? recoveryRecordPosition : activityRecordPosition, recovery ? recoveryRecordSelection : activityRecordSelection);
+            RefreshUi();
+        }
+        void ShowActivity() { ShowRecords(false); }
         void ShowSettings()
         {
-            if (settingsWindow != null && !settingsWindow.IsDisposed) { settingsWindow.Activate(); return; }
+            if (settingsWindow != null && !settingsWindow.IsDisposed) { settingsWindow.BringToFront(); return; }
             settingsWindow = new Form { Text = "设置", Font = Font, AutoScaleDimensions = new SizeF(96, 96), AutoScaleMode = AutoScaleMode.Dpi, ClientSize = new Size(570, 450), MinimumSize = new Size(540, 460), StartPosition = FormStartPosition.CenterParent, Icon = Icon };
             TabControl tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
             TabPage general = new TabPage("常规"), diagnostics = new TabPage("诊断工具"), about = new TabPage("帮助与更新"); tabs.TabPages.AddRange(new[] { general, diagnostics, about });
@@ -253,8 +311,10 @@ namespace CodexAutoResume
             common.Controls.Add(new Label { Text = "后台允许窗口被遮挡；Codex 需保持未最小化\n前台模式需要 Codex 位于前台，按钮可见", AutoSize = true, MaximumSize = new Size(510, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 8, 0, 16) });
             CheckBox checkUpdates = new CheckBox { Text = "自动检查更新", AutoSize = true, Checked = preferences.CheckUpdates };
             checkUpdates.CheckedChanged += delegate { preferences.CheckUpdates = checkUpdates.Checked; nextUpdateCheck = DateTime.UtcNow.AddSeconds(1); SavePreferences(); }; common.Controls.Add(checkUpdates);
+            AddScopeSettings(common);
             AddQuotaSettings(common);
             AddScheduleSettings(common);
+            AddTimedInstructions(common);
             common.Controls.Add(UiLabel("高级定位"));
             Button chooseWindow = UiButton("选择窗口", delegate { ChangeWindow(); }); chooseWindow.Name = "ChooseWindow"; common.Controls.Add(chooseWindow);
             common.Controls.Add(UiButton("选择按钮区域", delegate { RequestRegion(); }));
@@ -281,7 +341,7 @@ namespace CodexAutoResume
                 if (tabs.SelectedTab != diagnostics) return;
                 if (preview.Image != null) { Image old = sample.Image; sample.Image = new Bitmap(preview.Image); if (old != null) old.Dispose(); }
                 values.Text = UiText.Diagnostics(scores.Text);
-                statistics.Text = UiText.Diagnostics(activity.Summary(DateTime.UtcNow, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + Environment.NewLine + "最近系统帧：" + activity.LastContent.ToString("O") + Environment.NewLine + "原生捕获忙：" + sampler.IsBusy + (journal.WriteFailed ? Environment.NewLine + "日志暂时无法写入" : ""));
+                statistics.Text = UiText.Diagnostics(activity.Summary(DateTime.UtcNow, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + Environment.NewLine + "最近系统帧：" + activity.LastContent.ToString("O") + Environment.NewLine + "原生捕获忙：" + sampler.IsBusy + Environment.NewLine + WindowCapture.BorderStatus + (journal.WriteFailed ? Environment.NewLine + "日志暂时无法写入" : ""));
                 crop.Visible = target != null && !target.Automatic;
             }; refresh.Start();
             FlowLayoutPanel information = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(16) };
@@ -289,13 +349,18 @@ namespace CodexAutoResume
             information.Controls.Add(UiButton("检查更新", async delegate { await CheckUpdatesAsync(true); }));
             information.Controls.Add(UiButton("使用说明", delegate { ShowHelp(); })); information.Controls.Add(UiButton("许可证", delegate { ShowLicense(); }));
             information.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(510, 0), Text = "启动默认仅观察，开启自动恢复后才会点击\n自动检查每 6 小时一次，没有更新时保持安静", ForeColor = Color.DimGray, Margin = new Padding(0, 16, 0, 0) });
-            WindowUi.ScrollContent(about, information); settingsWindow.Controls.Add(tabs);
+            WindowUi.ScrollContent(about, information);
+            var settingsHeader = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false, Padding = new Padding(8, 2, 0, 0) };
+            settingsHeader.Controls.Add(UiButton("返回监测", delegate { settingsWindow.Close(); }));
+            settingsPause = UiButton(monitoring ? "暂停监测" : "继续监测", delegate { Toggle(); RefreshUi(); }); settingsHeader.Controls.Add(settingsPause);
+            settingsWindow.TopLevel = false; settingsWindow.FormBorderStyle = FormBorderStyle.None; settingsWindow.Dock = DockStyle.Fill;
+            settingsWindow.Controls.Add(tabs); settingsWindow.Controls.Add(settingsHeader);
             settingsWindow.FormClosed += delegate
             {
                 refresh.Stop(); refresh.Dispose(); if (sample.Image != null) sample.Image.Dispose();
-                common.Controls.Remove(background); crop.Controls.Remove(cropSize); SavePreferences();
+                common.Controls.Remove(background); crop.Controls.Remove(cropSize); settingsPause = null; SavePreferences();
             };
-            UiText.Apply(settingsWindow); WindowUi.Show(settingsWindow, this);
+            Controls.Add(settingsWindow); UiText.Apply(settingsWindow); settingsWindow.Show(); settingsWindow.BringToFront(); RefreshUi();
         }
 
         void OnCaptureFrame()
@@ -357,10 +422,9 @@ namespace CodexAutoResume
             SetStatus(state == ButtonState.Running ? "Codex 正在运行" : state == ButtonState.Resume ? "检测到暂停" : state == ButtonState.Send ? "等待发送" : state == ButtonState.VoiceClose ? "语音模式 · 等待操作" : state == ButtonState.Voice ? "等待操作" : "正在识别 Codex");
         }
         void RecordVerified(int previous)
-        { if (gate.Verified > previous) { CancelSchedule(false); AppendVisible("已恢复", "recovery"); } RefreshUi(); }
+        { if (gate.Verified > previous) { if (target != null && !target.Demo) SaveRecovery(DateTime.UtcNow); CancelSchedule(false, "completed"); AppendVisible("已恢复", "recovery"); } RefreshUi(); }
 
-        Form UpdateDialogOwner()
-        { return settingsWindow != null && !settingsWindow.IsDisposed ? settingsWindow : this; }
+        Form UpdateDialogOwner() { return this; }
 
         async Task CheckUpdatesAsync(bool manual)
         {

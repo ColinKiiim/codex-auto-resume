@@ -141,6 +141,7 @@ namespace CodexAutoResume
             var state = Operation("focus", "");
             if (!(bool)Get(state, "editorActive") || background && Native.GetForegroundWindow() != before) throw new InvalidOperationException();
         }
+        public void VerifyWritable() { Operation("writeCheck", ""); }
         public void Write(string text)
         {
             Operation("writeCheck", ""); written = text;

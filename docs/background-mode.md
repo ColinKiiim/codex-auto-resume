@@ -10,7 +10,7 @@
 
 每次采样有 3 秒外部截止时间。超时后继续监测，已有原生任务未完成前拒绝排入更多工作；迟到结果释放且不能点击。不是因超时而停止整项监测。隐藏或最小化时不点击，等待恢复；用户点暂停或关闭才结束日常监测。主动运行自检会暂停日常监测，完成后手动点继续监测。
 
-黄色边框属于系统捕获指示。关闭它需要系统支持以及相应权限/能力；本程序保留系统默认行为，不绕过权限、不保证无边框。参考 [IsBorderRequired](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.isborderrequired?view=winrt-26100) 和 [RequestAccessAsync](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscaptureaccess.requestaccessasync?view=winrt-26100)。
+黄色边框属于系统捕获指示。程序尝试请求系统无边框捕获权限，并在获准后对持续会话和独立复核会话设置无边框；不支持、授权失败或设置失败时保留可用捕获。实际边框由系统和其他捕获会话共同决定，不保证一定消失；诊断工具显示权限和设置状态。参考 [IsBorderRequired](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.isborderrequired?view=winrt-26100) 和 [RequestAccessAsync](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscaptureaccess.requestaccessasync?view=winrt-26100)。
 
 ## 点击与确认
 

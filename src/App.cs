@@ -12,6 +12,7 @@ namespace CodexAutoResume
         [STAThread] public static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--composer-worker") return ComposerWorker.Run();
+            if (args.Length == 1 && args[0] == "--scope-worker") return ScopeWorker.Run();
             DesktopIdentity.Initialize();
             Native.SetDpi();
             Application.EnableVisualStyles();
@@ -93,7 +94,7 @@ namespace CodexAutoResume
             healthTimer.Interval = 1000; healthTimer.Tick += delegate { HealthTick(); }; healthTimer.Start();
             journal.Write("diagnostics.log", "startup", "version=" + Portable.Version + "; detail=10sec", DateTime.UtcNow);
             WindowCapture.FrameAvailable += OnCaptureFrame;
-            Shown += delegate
+            Shown += async delegate
             {
                 uint[] modifiers = { 0x4003, 0x4007, 0x4006 };
                 string[] names = { "Ctrl+Alt", "Ctrl+Alt+Shift", "Ctrl+Shift" };
@@ -109,10 +110,12 @@ namespace CodexAutoResume
                 monitoring = true;
                 SetStatus("正在寻找 Codex");
                 RestoreAfterUpdate(); shownOnce = true; RefreshUi();
-                Task.Run((Action)Updates.CleanOldJobs);
+                StartCleanup();
                 BeginInvoke((Action)TickMonitor);
+                await WindowCapture.RequestBorderlessAsync();
             };
         }
+        static void StartCleanup() { Task.Run((Action)Updates.CleanOldJobs); }
         protected override void OnHandleCreated(EventArgs e)
         { base.OnHandleCreated(e); DesktopIdentity.ApplyToWindow(Handle); }
         protected override void DestroyHandle()
@@ -282,13 +285,13 @@ namespace CodexAutoResume
                     return;
                 }
                 if (!automatic.Checked) { SetStatus("检测到暂停 · 仅观察"); return; }
-                if (!QuotaAllowsNormal()) return;
+                if (!QuotaAllowsNormal() || !ScopeCheck(connected)) return;
                 InputSnapshot input = inputReader();
                 if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return; }
                 Point center = new Point(crop.Left + d.ButtonBounds.Left + d.ButtonBounds.Width / 2, crop.Top + d.ButtonBounds.Top + d.ButtonBounds.Height / 2);
                 bool clicked = BackgroundClick.Send(target.Window, WindowCapture.Bounds(target.Window), center, delegate
                 {
-                    if (!QuotaAllowsNormal() || !recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow)) return false;
+                    if (!QuotaAllowsNormal() || !ScopeCheck(connected) || !recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow)) return false;
                     Rectangle fresh; string why;
                     if (!target.Locate(recognizer, null, out fresh, out why) || fresh != crop) return false;
                     using (Bitmap b = Native.Capture(fresh))
@@ -337,6 +340,8 @@ namespace CodexAutoResume
         void HealthTick()
         {
             UsagePulse();
+            TickTimedInstructions();
+            TickScope();
             if (resumeSchedule.Active && !resumeSchedule.Allows(DateTime.UtcNow, ScheduleClock, ScheduleTarget, ScheduleZone) && resumeSchedule.Invalid)
             { CancelSchedule(true); SetStatus("时间或目标已变化，定时恢复已取消，请重新设置"); }
             DateTime now = DateTime.UtcNow;
@@ -468,7 +473,8 @@ namespace CodexAutoResume
                     if (!ready)
                     { ObserveStatus(d.State); return; }
                     if (!automatic.Checked) { SetStatus("检测到暂停 · 仅观察"); return; }
-                    if (!QuotaAllowsNormal()) return;
+                    if (!QuotaAllowsNormal() || !ScopeCheck(connected)) return;
+                    DateTime scopedBeforeCapture = DateTime.UtcNow;
                     InputSnapshot input = inputReader();
                     if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return; }
                     // An action needs an independent acquisition, including when
@@ -477,7 +483,7 @@ namespace CodexAutoResume
                     {
                         if (!Current(connected, revision) || !automatic.Checked || !QuotaAllowsNormal()) return;
                         Rectangle freshCrop;
-                        if (!fresh.NewerEvidenceThan(frame) || !connected.LocateBackground(fresh, recognizer, null, out freshCrop, out reason) || freshCrop != crop)
+                        if (!ScopePolicy.FrameAfterBinding(preferences.LimitScope, fresh.ContentAt, scopedBeforeCapture) || !fresh.NewerEvidenceThan(frame) || !connected.LocateBackground(fresh, recognizer, null, out freshCrop, out reason) || freshCrop != crop)
                         { BackgroundWait("后台点击前位置变化，等待重新定位"); return; }
                         Rectangle freshLocal = freshCrop; freshLocal.Offset(-fresh.Bounds.X, -fresh.Bounds.Y);
                         Detection again;
@@ -486,7 +492,7 @@ namespace CodexAutoResume
                         { BackgroundWait("后台点击前图标变化，已取消本次点击"); return; }
                         Point center = new Point(freshCrop.Left + again.ButtonBounds.Left + again.ButtonBounds.Width / 2, freshCrop.Top + again.ButtonBounds.Top + again.ButtonBounds.Height / 2);
                         bool sent = BackgroundClick.Send(connected.Window, fresh.Bounds, center, delegate
-                        { string why; return Current(connected, revision) && automatic.Checked && QuotaAllowsNormal() && recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow) && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
+                        { string why; return Current(connected, revision) && automatic.Checked && QuotaAllowsNormal() && ScopeCheck(connected) && recoveryWindow.Unchanged(input, inputReader(), DateTime.UtcNow) && connected.ValidateIdentity(out why) && fresh.ContentFresh(DateTime.UtcNow) && (DateTime.UtcNow - fresh.CapturedAt).TotalSeconds <= 2; });
                         if (sent) { gate.MarkAttempt(DateTime.UtcNow); RefreshScores(d); SetStatus("后台操作已投递：" + BackgroundClick.LastRoute + "；等待方块确认，尚不计为成功"); }
                         else BackgroundWait("后台点击前窗口状态变化，已取消本次点击");
                     }
@@ -572,8 +578,8 @@ namespace CodexAutoResume
         {
             string line = DateTime.Now.ToString("HH:mm:ss") + "  " + text + Environment.NewLine;
             if (logBox.TextLength > 24000) logBox.Clear(); logBox.AppendText(line);
+            if (recordsView != null && !recordsView.IsDisposed && recordsPage.Visible && !showingRecoveryRecords) recordsView.UpdateHistory(UiText.Get(logBox.Text), true);
             RecentProgress(text);
-            if (activityView != null && !activityView.IsDisposed) { activityView.Text = UiText.Get(logBox.Text); activityView.SelectionStart = activityView.TextLength; activityView.ScrollToCaret(); }
             journal.Write("events.log", category, text, DateTime.UtcNow);
         }
         void SaveDiagnostic()
@@ -615,6 +621,7 @@ namespace CodexAutoResume
         readonly IconButton icon = new IconButton();
         readonly Label count = new Label { Dock = DockStyle.Top, Height = 36, Text = "按钮收到的点击：0" };
         int clicks;
+        static void StartCleanup() { Task.Run((Action)Updates.CleanOldJobs); }
         protected override void OnHandleCreated(EventArgs e)
         { base.OnHandleCreated(e); DesktopIdentity.ApplyToWindow(Handle); }
         protected override void DestroyHandle()

@@ -57,7 +57,9 @@ namespace CodexAutoResume
                     {
                         if (child is Label) child.MaximumSize = new Size(usable, 0);
                         if (child is TextBox) child.Width = usable;
-                        if (child is DateTimePicker) child.Width = usable;
+                        if (child is DateTimePicker || child is ListBox || child is ComboBox && child.Name == "ScopeChoices") child.Width = usable;
+                        var row = child as FlowLayoutPanel;
+                        if (row != null) { row.MaximumSize = new Size(usable, 0); row.WrapContents = true; }
                     }
                     content.PerformLayout();
                 }

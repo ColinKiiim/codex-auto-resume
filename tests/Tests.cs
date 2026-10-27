@@ -26,6 +26,7 @@ namespace CodexAutoResume
                 Group("Current-login usage protocol", () => UsageTests.Run(Check));
                 Group("Quota pause safety", Quota);
                 Group("Scheduled recovery safety", Schedule);
+                Group("Scoped actions and timed instructions", ScopedInstructions);
             }
             catch (Exception error) { failures++; Console.Error.WriteLine(error); }
             string result = "Assertions: " + assertions + "; failures: " + failures;
@@ -154,6 +155,44 @@ namespace CodexAutoResume
             Check(QuotaPolicy.Evaluate(usage, UsageError.None, saved, now) == QuotaLevel.Low, "5h equality uses its own threshold");
             saved.QuotaFiveHour = false;
             Check(QuotaPolicy.Evaluate(usage, UsageError.None, saved, now) == QuotaLevel.Healthy, "disabled low 5h cannot block weekly-only recovery");
+        }
+        static void ScopedInstructions()
+        {
+            var project = new ScopeEntry { Kind = "project", Id = "p1", Title = "Project" };
+            var chat = new ScopeEntry { Kind = "chat", Id = "c1", ProjectId = "p1", Title = "Chat", Project = "Project" };
+            var view = new ScopeReply { Result = "Observed", ProjectId = "p1", CurrentId = "c1", Entries = new System.Collections.Generic.List<ScopeEntry> { project, chat } };
+            Check(ScopePolicy.Allows(true, false, project, view) && ScopePolicy.Allows(true, false, chat, view), "same project and selected chat are allowed only with matching evidence");
+            Check(ScopePolicy.AllowsEntry(true, false, project, chat) && ScopePolicy.AllowsEntry(true, false, chat, chat), "explicit tasks can navigate only to an allowed bound entry");
+            Check(!ScopePolicy.AllowsEntry(true, false, project, new ScopeEntry { Kind = "chat", Id = "other", ProjectId = "p2", Project = "Other" }), "task navigation cannot escape its selected project");
+            project.Ambiguous = true;
+            Check(!ScopePolicy.Allows(true, false, project, view) && !ScopePolicy.AllowsEntry(true, false, project, chat), "duplicate-name project binding cannot authorize navigation or actions");
+            project.Ambiguous = false;
+            view.ProjectId = "p2";
+            Check(!ScopePolicy.Allows(true, false, project, view) && !ScopePolicy.Allows(true, false, chat, view), "wrong project cannot authorize a scoped action");
+            view.ProjectId = "p1"; view.CurrentId = "c2";
+            Check(!ScopePolicy.Allows(true, false, chat, view) && !ScopePolicy.Allows(true, true, project, view), "other chat and uncertain navigation cannot authorize action");
+            view.CurrentId = "c1"; var renamed = new ScopeEntry { Kind = "project", Id = "p1", Title = "Different" }; view.Entries[0] = renamed;
+            Check(!ScopePolicy.Allows(true, false, project, view), "renamed project cannot reuse a prior binding");
+            Check(!ScopePolicy.Allows(true, false, null, view) && !ScopePolicy.Allows(true, false, project, null), "missing binding or evidence fails closed");
+            var originalContext = new ComposerContext { Backend = "UIA", Conversation = "chat", Title = "title", Editor = "old" };
+            var reboundContext = new ComposerContext { Backend = "UIA", Conversation = "chat", Title = "title", Editor = "new" };
+            Check(ComposerContext.SameConversation(originalContext, reboundContext), "read-only preflight may refresh an editor within the same conversation");
+            reboundContext.Conversation = "other";
+            Check(!ComposerContext.SameConversation(originalContext, reboundContext), "editor refresh never transfers permission to another conversation");
+            DateTime bound = DateTime.UtcNow;
+            Check(!ScopePolicy.FrameAfterBinding(true, bound.AddTicks(-1), bound) && ScopePolicy.FrameAfterBinding(true, bound, bound), "a captured frame from before scope binding cannot authorize a click");
+            Check(TimedInstructionPolicy.OnLoad("执行中") == "结果不明，请核对" && TimedInstructionPolicy.OnLoad("等待执行") == "需重新绑定", "restart never automatically replays an in-flight or pending task");
+            Check(TimedInstructionPolicy.AfterReply("Submitted") == "已完成" && TimedInstructionPolicy.AfterReply("Uncertain") == "结果不明，请核对" && !TimedInstructionPolicy.CanRebind("结果不明，请核对"), "unknown submission outcome cannot be silently rebound or repeated");
+            DateTime now = DateTime.UtcNow;
+            var first = new TimedInstruction { Id = "1", State = "等待条件", DueUtc = now.AddSeconds(-2), NextAttempt = now.AddSeconds(5), Context = new ComposerContext { Conversation = "one" } };
+            var second = new TimedInstruction { Id = "2", State = "等待执行", DueUtc = now.AddSeconds(-1), Context = new ComposerContext { Conversation = "one" } };
+            Check(TimedInstructionPolicy.NextDue(new[] { first, second }, now) == null, "a later task for the same chat cannot overtake a waiting earlier task");
+            second.Context.Conversation = "two";
+            Check(TimedInstructionPolicy.NextDue(new[] { first, second }, now) == second, "a blocked chat does not block an independent target queue");
+            second.Context.Conversation = "one"; first.State = "结果不明，请核对";
+            Check(TimedInstructionPolicy.NextDue(new[] { first, second }, now) == null, "uncertain submission holds later instructions for that target until review");
+            var snapshot = new UsageSnapshot { AccountKey = "one", FetchedUtc = now };
+            Check(TimedInstructionPolicy.SameAccount(snapshot, UsageError.None, TimedInstructionPolicy.AccountFingerprint("one"), now) && !TimedInstructionPolicy.SameAccount(snapshot, UsageError.None, TimedInstructionPolicy.AccountFingerprint("two"), now) && !TimedInstructionPolicy.SameAccount(snapshot, UsageError.None, TimedInstructionPolicy.AccountFingerprint("one"), now.AddSeconds(31)), "task requires the same fresh account evidence");
         }
         static void Recovery()
         {
