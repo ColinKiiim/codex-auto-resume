@@ -133,6 +133,7 @@ namespace CodexAutoResume
         static bool PrepareNavigation(ComposerRequest request, uint inputTick, IntPtr window)
         {
             if (!ComposerWorker.Valid(request, inputTick)) throw new InvalidOperationException("input before navigation");
+            if (Native.IsIconic(window)) throw new InvalidOperationException("minimized navigation requires a bound debug endpoint");
             if (Native.GetForegroundWindow() == window) return false;
             // This Codex provider can block Invoke itself while backgrounded,
             // so resolve activation before committing the single navigation.
@@ -142,6 +143,33 @@ namespace CodexAutoResume
             { if (!ComposerWorker.Valid(request, inputTick)) throw new InvalidOperationException("input during activation"); Thread.Sleep(50); }
             if (Native.GetForegroundWindow() != window) throw new InvalidOperationException("navigation activation denied");
             return true;
+        }
+        static DebugComposer DebugNavigation(ComposerRequest request)
+        {
+            try { int port = ComposerWorker.DiscoverPort(request.ProcessId); return port == 0 ? null : new DebugComposer(request, port); }
+            catch { return null; }
+        }
+        static ScopeReply NavigateDebug(DebugComposer composer, ScopeRequest request, ScopeReply before, ScopeEntry destination, bool expand, Action reserve)
+        {
+            IntPtr window = new IntPtr(request.Target.Window), foreground = Native.GetForegroundWindow(); bool minimized = Native.IsIconic(window);
+            var current = Read(window);
+            if (current.CurrentId != before.CurrentId || !current.Entries.Any(x => x.Id == destination.Id && x.Title == destination.Title && x.ProjectId == destination.ProjectId)) throw new InvalidOperationException("Navigation proof changed");
+            composer.Navigate(current, destination, expand, request.InputTick, reserve);
+            composer.RefreshAccessibility();
+            DateTime deadline = DateTime.UtcNow.AddSeconds(8);
+            string reason = "native-state-unconfirmed";
+            while (DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(150);
+                if (!ComposerWorker.Valid(request.Target, request.InputTick)) { reason = "input-or-target-changed"; break; }
+                if (Native.GetForegroundWindow() != foreground) { reason = "foreground-changed"; break; }
+                if (Native.IsIconic(window) != minimized) { reason = "minimized-state-changed"; break; }
+                var fresh = Read(window);
+                if (expand ? fresh.CurrentId == before.CurrentId && fresh.Entries.Any(x => x.Id == destination.Id && x.Expanded == "true") :
+                    fresh.CurrentId == destination.Id && fresh.ProjectId == destination.ProjectId)
+                { fresh.Result = expand ? "Expanded" : "Switched"; fresh.Stage = "background-CDP-native-confirmed"; return fresh; }
+            }
+            return new ScopeReply { Result = "Uncertain", Stage = "background-CDP-" + reason };
         }
         internal static int Run()
         {
@@ -155,12 +183,14 @@ namespace CodexAutoResume
                 if (request.Operation == "switch")
                 {
                     if (!ComposerWorker.Valid(request.Target, request.InputTick) || reply.CurrentId != request.FromId) throw new InvalidOperationException("source changed");
-                    bool activationRequested = PrepareNavigation(request.Target, request.InputTick, window);
                     var destination = reply.Entries.Single(x => x.Kind == "chat" && x.Id == request.ToId && x.ProjectId == request.ProjectId);
                     // Ambiguous titles are not usable as corroborating evidence.
                     if (reply.Entries.Count(x => x.Kind == "chat" && x.Title == destination.Title) != 1) throw new InvalidOperationException("duplicate chat title");
+                    using (var debug = DebugNavigation(request.Target))
+                        if (debug != null) { reply = NavigateDebug(debug, request, reply, destination, false, delegate { invoked = true; }); goto finished; }
+                    bool activationRequested = PrepareNavigation(request.Target, request.InputTick, window);
                     var chat = Chat(window, destination.Id); object pattern;
-                    if (chat.Current.IsOffscreen)
+                    if (chat.Current.IsOffscreen && !Native.IsIconic(window))
                     {
                         object scroll;
                         if (!chat.TryGetCurrentPattern(ScrollItemPattern.Pattern, out scroll)) throw new InvalidOperationException("chat offscreen");
@@ -189,8 +219,10 @@ namespace CodexAutoResume
                 else if (request.Operation == "expand")
                 {
                     if (!ComposerWorker.Valid(request.Target, request.InputTick) || reply.CurrentId != request.FromId) throw new InvalidOperationException("source changed");
-                    PrepareNavigation(request.Target, request.InputTick, window);
                     var selected = reply.Entries.Single(x => x.Kind == "project" && x.Id == request.ProjectId && x.Expanded == "false");
+                    using (var debug = DebugNavigation(request.Target))
+                        if (debug != null) { reply = NavigateDebug(debug, request, reply, selected, true, delegate { invoked = true; }); goto finished; }
+                    PrepareNavigation(request.Target, request.InputTick, window);
                     var root = AutomationElement.FromHandle(window);
                     var group = root.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Group)).Cast<AutomationElement>()
                         .Single(e => String.Join(".", e.GetRuntimeId().Select(n => n.ToString())) == selected.Id && e.Current.Name == selected.Title);
@@ -218,7 +250,8 @@ namespace CodexAutoResume
                 }
                 else if (request.Operation != "read") throw new InvalidOperationException("operation");
             }
-            catch (Exception error) { reply = new ScopeReply { Result = invoked ? "Uncertain" : "Blocked", Stage = error.GetType().Name }; }
+            catch (Exception error) { reply = new ScopeReply { Result = invoked ? "Uncertain" : "Blocked", Stage = error.GetType().Name + ":" + error.Message }; }
+            finished:
             using (var output = new System.IO.StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false))) { output.WriteLine(json.Serialize(reply)); output.Flush(); }
             return 0;
         }

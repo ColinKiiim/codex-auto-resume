@@ -6,7 +6,7 @@
 
 **Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. Compact footer bars also show the current login's remaining quota and reset times. One EXE, no API key.
 
-> Version 1.1.18 adds detailed capture diagnostics and one-click copy/export of recent 30-minute logs to investigate missed pauses while fully covered. It does not claim to fix that issue. See the [version notes](docs/releases/v1.1.18.md) for setup and limits.
+> Version 1.1.19 prefers verified composer controls to address missed pauses caused by stale fully covered captures. An existing, independently verified endpoint also enables minimized operation. Recent 30-minute log/diagnostic export remains available; see the [version notes](docs/releases/v1.1.19.md) for support conditions and outstanding device acceptance.
 
 ## Pause on low quota, continue after recovery
 
@@ -14,7 +14,7 @@ Compact footer bars read the current local login about every 10 seconds. Hover f
 
 Select 5h, weekly, or both and set a separate remaining-percentage threshold for each (both default to 10%). Any selected quota at or below the threshold triggers an attempt to verify the conversation and pause the running square. While waiting, screen sampling drops to once a minute; quota queries remain independent. All selected quotas must rise above their own thresholds before continuing. A freshly verified resume triangle in the original conversation takes priority. If it disappears, the helper may submit a customizable continuation to that verified conversation's empty editor. The default Chinese text asks Codex to continue from the interruption point.
 
-Input first tries an already available local debugging endpoint, then Windows UI Automation with foreground focus. It never enables debugging or restarts Codex automatically. Unverifiable conversations, unsupported interfaces, Windows activation denial, existing drafts/attachments/questions/voice mode, or uncertain input outcomes require manual handling; there is no repeated submission. Integration with the current local Codex build still needs real-app validation; see the [stage-two record](docs/history/2026-10-26-stage-two.md).
+Input first tries an existing, ownership-verified local debugging endpoint, with current sidebar and multiple-page binding, then UI Automation where supported. Foreground fallback is limited to non-minimized targets. CAR never enables debugging, restarts or restores Codex automatically. Unverifiable conversations, unsupported interfaces, drafts/attachments/questions/voice mode and uncertain input require manual handling; submissions are not repeated. Owned minimized-window flows passed; real-app background submission remains pending. See the [implementation record](docs/history/2026-10-29-v1.1.19-background-controls.md).
 
 **An early reset for all users is a target scenario.** If actual quota recovers before the previous countdown, CAR uses that fresh quota instead of waiting for the old reset time. This includes the Tibo-wide-reset scenario requested by the user. Polling normally takes about 10 seconds; network delays, failure backoff, input protection and UI availability can delay continuation. An earlier request reduces idle time, but the server determines when the weekly window starts. CAR cannot control that timer or promise instant continuation.
 
@@ -55,7 +55,7 @@ See the [at capacity / atcapacity FAQ](docs/troubleshooting.en.md) for troublesh
 1. Open this repository’s **Releases** and download the latest `CodexAutoResume-vVERSION-windows-x64.exe` attachment.
 2. Run the EXE and open Codex desktop. The utility discovers the target window and starts in observation mode.
 3. Check the detected icon, then enable **自动恢复** (Auto-resume). No hotkey or calibration is required.
-4. Background monitoring is enabled by default for new users. Codex can be covered while you work elsewhere; keep it unminimized. Change the mode and UI language in Settings.
+4. Background monitoring is enabled by default for new users. Codex can be covered while you work elsewhere; an existing verified endpoint also permits minimized operation. Unavailable minimized controls wait. Change the mode and UI language in Settings.
 5. Click **暂停** (Pause) to pause monitoring, or close the utility to exit.
 
 **Requirements:** Windows 10 1903+ / Windows 11 x64 with system .NET Framework. Choose Chinese or English in Settings; your selection is saved. Copy just the EXE to another computer; reference images, icon, and license are embedded. No Python, Node.js, API key, or downloaded recognition model is needed. Question-panel detection uses installed Windows OCR languages.
@@ -74,7 +74,7 @@ Source builds also create `release/CodexAutoResume.exe`. Download the executable
 
 Automatic localization follows window movement. Manual calibration remains available. Multiple target windows require a selection.
 
-Background mode uses Windows Graphics Capture and window messages without moving the system pointer or activating Codex. Support depends on the target rendering fresh frames and accepting those messages. Minimized windows wait until restored. Static content retains the last observation without a timeout warning. Actions require an independent fresh acquisition; only a post-click square frame confirms recovery. CAR requests system-authorized borderless capture. Permission, API availability and other capture clients determine the actual system border.
+Background mode first binds the original window, chat, page and unique composer, then reads controls and verifies the resulting state. Control-state illustrations are labeled separately from captured images. An existing verified CDP endpoint supports minimized operation; unavailable endpoints wait instead of using cached minimized UIA labels or image clicks. Image fallback still requires fresh target rendering, independent action evidence and a new running square after the action. CAR requests system-authorized borderless capture; permission and other capture clients determine the actual border.
 
 ## Monitoring and privacy
 
@@ -82,7 +82,7 @@ The compact window shows monitoring status, a tightly cropped real preview, and 
 
 Updates are checked on startup and every six hours. A new stable release prompts for confirmation, then downloads, verifies, replaces, and restarts the EXE. Failed replacement or startup keeps or restores the old version. Update checks can be disabled in Settings. Existing versions without this feature need one manual upgrade.
 
-Recognition and OCR run locally. The utility does not automatically upload images or record chat text, question text, full screenshots, or chat titles. A cropped diagnostic image is saved only when requested by the user.
+Recognition and OCR run locally, with no automatic uploads. Opt-in detailed diagnostics can retain full-window images containing private chat content for up to one hour, bounded to 180 sets / 128 MB. Review diagnostic exports before sharing; ordinary text logs use identity hashes instead of chat text.
 
 ## FAQ
 

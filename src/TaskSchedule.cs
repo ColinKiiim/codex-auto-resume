@@ -187,7 +187,7 @@ namespace CodexAutoResume
         bool TimedCurrent(TimedInstruction task, Target connected, int revision)
         {
             string why;
-            return !IsDisposed && monitoring && automatic.Checked && target == connected && generation == revision && connected.ValidateIdentity(out why) &&
+            return !IsDisposed && monitoring && automatic.Checked && target == connected && generation == revision && connected.ValidateProcessIdentity(out why) &&
                 connected.Window.ToInt64() == task.Window && connected.ProcessId == task.ProcessId && connected.ProcessStart == task.ProcessStart &&
                 TimedInstructionPolicy.SameAccount(usageSnapshot, usageError, task.AccountKey, DateTime.UtcNow) &&
                 (!preferences.QuotaControl || QuotaNow == QuotaLevel.Healthy) && !questions.Waiting && !quotaPause.Owned && !gate.AwaitingRunning && ScheduleZone == task.Zone;

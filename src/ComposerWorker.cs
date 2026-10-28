@@ -21,6 +21,7 @@ namespace CodexAutoResume
         void Write(string text);
         int MessageCount(string text);
         void Send();
+        void ChangeState(ButtonState expected);
     }
 
     internal static class ComposerWorker
@@ -65,7 +66,7 @@ namespace CodexAutoResume
             string why;
             var target = new Target { Window = new IntPtr(request.Window), ProcessId = request.ProcessId, ProcessStart = request.ProcessStart, ProcessPath = request.ProcessPath };
             DateTime expires = request.ExpiresUtc.ToUniversalTime();
-            if (DateTime.UtcNow >= expires || (expires - DateTime.UtcNow).TotalSeconds > 31 || !target.ValidateIdentity(out why)) return false;
+            if (DateTime.UtcNow >= expires || (expires - DateTime.UtcNow).TotalSeconds > 31 || !target.ValidateProcessIdentity(out why)) return false;
             if (request.NotBeforeUtc.HasValue && DateTime.UtcNow < request.NotBeforeUtc.Value.ToUniversalTime()) return false;
             if (!inputTick.HasValue) return true;
             var input = Native.ReadInput();
@@ -76,7 +77,9 @@ namespace CodexAutoResume
             var json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
             var reply = new ComposerReply { Result = "Blocked" };
             bool mayHaveWritten = false;
+            bool actionAttempted = false;
             string stage = "open";
+            string bindingNote = null;
             try
             {
                 var request = json.Deserialize<ComposerRequest>(Console.ReadLine());
@@ -85,17 +88,38 @@ namespace CodexAutoResume
                 if (request.Context == null)
                 {
                     int port;
-                    try { port = DiscoverPort(request.ProcessId); } catch { port = 0; }
+                    try { port = DiscoverPort(request.ProcessId); } catch (Exception error) { port = 0; bindingNote = "port-discovery:" + error.GetType().Name; }
                     try { composer = port == 0 ? null : new DebugComposer(request, port); }
-                    catch { composer = null; }
-                    if (composer == null) composer = new AccessibleComposer(request);
+                    catch (Exception error) { composer = null; bindingNote = "CDP-unavailable:" + error.GetType().Name; }
+                    if (composer == null) { if (bindingNote == null) bindingNote = "no-owned-CDP-endpoint"; composer = new AccessibleComposer(request); }
                 }
                 else composer = request.Context.Backend == "CDP" ? (IComposer)new DebugComposer(request, request.Context.Port) : new AccessibleComposer(request);
                 using (composer)
                 {
                     stage = "inspect";
                     reply = composer.Inspect(); reply.Context = composer.Context; reply.Result = "Observed";
-                    if (request.Operation == "submit")
+                    if (request.Operation == "resume" || request.Operation == "pause")
+                    {
+                        ButtonState expected = request.Operation == "resume" ? ButtonState.Resume : ButtonState.Running;
+                        var input = Native.ReadInput();
+                        if (!Valid(request, input.Tick) || !reply.Safe || reply.State != expected || request.Operation == "resume" && !reply.Empty ||
+                            request.Context == null || !ComposerContext.SameConversation(request.Context, composer.Context)) throw new ComposerUnavailable("state-preflight");
+                        IntPtr foreground = Native.GetForegroundWindow(); bool minimized = Native.IsIconic(new IntPtr(request.Window));
+                        // Reserve before invoking; an unknown result must not be
+                        // mistaken for a safe text fallback or an image click.
+                        stage = "state-action"; actionAttempted = true; mayHaveWritten = true; composer.ChangeState(expected);
+                        reply.Result = "Uncertain";
+                        for (int n = 0; n < 15; n++)
+                        {
+                            if (!Valid(request, input.Tick) || Native.GetForegroundWindow() != foreground || Native.IsIconic(new IntPtr(request.Window)) != minimized) break;
+                            var after = composer.Inspect();
+                            if (!ComposerContext.SameConversation(after.Context, request.Context)) break;
+                            if (after.Safe && (expected == ButtonState.Resume ? after.State == ButtonState.Running : after.State != ButtonState.Running && after.State != ButtonState.Unknown))
+                            { reply = after; reply.Result = "Changed"; break; }
+                            Thread.Sleep(100);
+                        }
+                    }
+                    else if (request.Operation == "submit")
                     {
                         var input = Native.ReadInput();
                         if (!ComposerRequest.ValidPrompt(request.Prompt)) throw new ComposerUnavailable("invalid-prompt");
@@ -113,6 +137,7 @@ namespace CodexAutoResume
                             // No text has been written at this point. Foreground
                             // fallback is explicitly authorized by the user.
                             if (!Valid(request, input.Tick)) throw new ComposerUnavailable("input-before-focus");
+                            if (Native.IsIconic(new IntPtr(request.Window))) throw new ComposerUnavailable("minimized-background-input-unavailable");
                             if (composer.Context.Backend != "UIA") SetForegroundWindow(new IntPtr(request.Window));
                             composer.Focus(false);
                             if (Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new ComposerUnavailable("activation-denied");
@@ -156,6 +181,9 @@ namespace CodexAutoResume
             }
             catch (Exception error) { stage += ":" + error.GetType().Name + (error is ComposerUnavailable ? ":" + error.Message : ""); reply = new ComposerReply { Result = mayHaveWritten ? "Uncertain" : "Blocked" }; }
             reply.Stage = stage;
+            reply.BindingNote = bindingNote;
+            reply.ActionAttempted = actionAttempted;
+            if (reply.ObservedUtc == DateTime.MinValue) reply.ObservedUtc = DateTime.UtcNow;
             // The portable application is a GUI executable, without a console.
             // OutputEncoding tries SetConsoleOutputCP and can throw even with
             // inherited redirected pipes. Write UTF-8 to the pipe directly.
@@ -173,11 +201,13 @@ namespace CodexAutoResume
         readonly ComposerContext context;
         string written;
         bool sendAttempted;
-        internal AccessibleComposer(ComposerRequest request)
+        bool backgroundWrite;
+        internal AccessibleComposer(ComposerRequest request, bool enforceContext = true)
         {
             this.request = request; root = AutomationElement.FromHandle(new IntPtr(request.Window));
             editor = SingleEditor(); context = BuildContext();
-            if (request.Context != null && !Same(request.Context, context)) throw new InvalidOperationException();
+            if (enforceContext && request.Context != null && !Same(request.Context, context) &&
+                !(request.Operation == "inspect" && ComposerContext.SameConversation(request.Context, context))) throw new InvalidOperationException();
         }
         static bool Same(ComposerContext a, ComposerContext b)
         { return a.Backend == b.Backend && a.Title == b.Title && a.Conversation == b.Conversation && a.Editor == b.Editor; }
@@ -187,7 +217,10 @@ namespace CodexAutoResume
         AutomationElement SingleEditor()
         {
             var all = Elements(ControlType.Edit).Concat(Elements(ControlType.Document)).ToArray();
-            var editors = all.Where(e => e.Current.IsEnabled && !e.Current.IsOffscreen && e.Current.IsKeyboardFocusable).ToArray();
+            bool minimized = Native.IsIconic(new IntPtr(request.Window));
+            var editors = all.Where(e => e.Current.IsEnabled && (minimized || !e.Current.IsOffscreen) && e.Current.IsKeyboardFocusable).ToArray();
+            var richEditors = editors.Where(e => e.Current.ControlType == ControlType.Edit && e.Current.ClassName.Split(' ').Contains("ProseMirror")).ToArray();
+            if (richEditors.Length > 0) editors = richEditors;
             if (CodexDocument() != null)
                 editors = editors.Where(e => e.Current.ControlType == ControlType.Edit && Named(e, "和 Codex 一起工作", "Work with Codex")).ToArray();
             if (editors.Length != 1) throw new ComposerUnavailable("editor-count-" + editors.Length + "-all-" + all.Length);
@@ -231,15 +264,89 @@ namespace CodexAutoResume
             return new ComposerContext { Backend = "UIA", Title = title, Conversation = Id(selected[0]), Editor = Id(editor) };
         }
         void Check()
-        { if (!ComposerWorker.Valid(request, null) || !Same(context, BuildContext()) || Id(SingleEditor()) != context.Editor) throw new InvalidOperationException(); }
+        {
+            if (!ComposerWorker.Valid(request, null)) throw new ComposerUnavailable("composer-request-invalid");
+            var fresh = BuildContext();
+            if (fresh.Title != context.Title) throw new ComposerUnavailable("composer-title-changed");
+            if (fresh.Conversation != context.Conversation) throw new ComposerUnavailable("composer-conversation-changed");
+            if (!Same(context, fresh)) throw new ComposerUnavailable("composer-bound-editor-changed");
+            if (Id(SingleEditor()) != context.Editor) throw new ComposerUnavailable("composer-resolved-editor-changed");
+        }
         static bool Named(AutomationElement e, params string[] names)
         { return names.Contains(e.Current.Name, StringComparer.OrdinalIgnoreCase); }
+        internal static ButtonState NamedState(string name)
+        {
+            name = (name ?? "").Trim();
+            if (new[] { "Stop", "Stop generating", "停止", "停止生成" }.Contains(name, StringComparer.OrdinalIgnoreCase)) return ButtonState.Running;
+            if (new[] { "Resume", "Resume generation", "Continue", "Continue generating", "恢复", "继续", "恢复运行", "继续运行", "继续生成" }.Contains(name, StringComparer.OrdinalIgnoreCase)) return ButtonState.Resume;
+            if (new[] { "Send", "Send message", "发送", "发送消息" }.Contains(name, StringComparer.OrdinalIgnoreCase)) return ButtonState.Send;
+            if (new[] { "Start voice mode", "启动语音模式", "语音模式" }.Contains(name, StringComparer.OrdinalIgnoreCase)) return ButtonState.Voice;
+            return ButtonState.Unknown;
+        }
+        AutomationElement ComposerContainer()
+        {
+            var parent = TreeWalker.ControlViewWalker.GetParent(editor);
+            for (int n = 0; parent != null && n < 7; n++, parent = TreeWalker.ControlViewWalker.GetParent(parent))
+            {
+                // Never climb into a window/document-wide pool of buttons.
+                if (parent.Current.ControlType == ControlType.Window || parent.Current.ControlType == ControlType.TitleBar || parent.Current.AutomationId == "RootWebArea") break;
+                var buttons = parent.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>().ToArray();
+                if (buttons.Length > 0 && buttons.Length <= 14 && buttons.Any(b => NamedState(b.Current.Name) != ButtonState.Unknown)) return parent;
+            }
+            throw new ComposerUnavailable("composer-container-unavailable");
+        }
+        AutomationElement[] ActionButtons()
+        {
+            bool minimized = Native.IsIconic(new IntPtr(request.Window));
+            return ComposerContainer().FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>()
+                .Where(e => e.Current.IsEnabled && (minimized || !e.Current.IsOffscreen) && NamedState(e.Current.Name) != ButtonState.Unknown).ToArray();
+        }
+        internal Dictionary<string, object> Describe()
+        {
+            Check(); var ancestry = new List<object>();
+            for (var node = editor; node != null && ancestry.Count < 8; node = TreeWalker.ControlViewWalker.GetParent(node))
+            {
+                ancestry.Add(new { type = node.Current.ControlType.ProgrammaticName, css = node.Current.ClassName,
+                    runtimeHash = CaptureEvidence.Hash(Id(node)), patterns = node.GetSupportedPatterns().Select(p => p.ProgrammaticName).ToArray() });
+                if (node.Current.AutomationId == "RootWebArea") break;
+            }
+            var buttons = ActionButtons().Select(b => new { state = NamedState(b.Current.Name).ToString(), enabled = b.Current.IsEnabled,
+                offscreen = b.Current.IsOffscreen, runtimeHash = CaptureEvidence.Hash(Id(b)),
+                patterns = b.GetSupportedPatterns().Select(p => p.ProgrammaticName).ToArray() }).ToArray();
+            return new Dictionary<string, object> { { "result", "bound" }, { "conversationHash", CaptureEvidence.Hash(context.Conversation) },
+                { "editorCount", 1 }, { "editorHash", CaptureEvidence.Hash(context.Editor) }, { "ancestry", ancestry }, { "composerButtons", buttons },
+                { "minimizedStateTrusted", false } };
+        }
+        public void ChangeState(ButtonState expected)
+        {
+            Check(); var input = Native.ReadInput();
+            var before = Inspect();
+            if (!before.Safe || before.State != expected || !ComposerWorker.Valid(request, input.Tick)) throw new ComposerUnavailable("state-changed");
+            var buttons = ActionButtons().Where(b => NamedState(b.Current.Name) == expected).ToArray();
+            if (buttons.Length != 1) throw new ComposerUnavailable("composer-action-unavailable");
+            if (!ComposerWorker.Valid(request, input.Tick)) throw new ComposerUnavailable("input-before-invoke");
+            BackgroundAction(buttons[0], input.Tick);
+        }
+        void BackgroundAction(AutomationElement button, uint inputTick)
+        {
+            IntPtr child = IntPtr.Zero;
+            for (var node = button; node != null; node = TreeWalker.RawViewWalker.GetParent(node))
+            {
+                int handle = node.Current.NativeWindowHandle;
+                if (handle != 0) { child = new IntPtr(handle); break; }
+            }
+            var bounds = button.Current.BoundingRectangle;
+            var rectangle = new System.Drawing.Rectangle((int)bounds.X, (int)bounds.Y, (int)bounds.Width, (int)bounds.Height);
+            if (child == IntPtr.Zero || !BackgroundClick.SendControl(new IntPtr(request.Window), child, rectangle,
+                delegate { Check(); return ComposerWorker.Valid(request, inputTick) && button.Current.BoundingRectangle == bounds; }))
+                throw new ComposerUnavailable("background-control-geometry-unavailable");
+        }
         AutomationElement SendButton()
         {
             // The editor and send must share the immediate composer container.
-            var parent = TreeWalker.ControlViewWalker.GetParent(editor);
+            var parent = ComposerContainer();
             var buttons = parent.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>()
-                .Where(e => e.Current.IsEnabled && !e.Current.IsOffscreen && Named(e, "Send", "Send message", "发送", "发送消息")).ToArray();
+                .Where(e => e.Current.IsEnabled && (Native.IsIconic(new IntPtr(request.Window)) || !e.Current.IsOffscreen) && Named(e, "Send", "Send message", "发送", "发送消息")).ToArray();
             if (buttons.Length != 1) throw new InvalidOperationException();
             return buttons[0];
         }
@@ -272,11 +379,15 @@ namespace CodexAutoResume
             object pattern; string text;
             if (editor.TryGetCurrentPattern(ValuePattern.Pattern, out pattern)) text = ((ValuePattern)pattern).Current.Value;
             else if (editor.TryGetCurrentPattern(TextPattern.Pattern, out pattern)) text = ((TextPattern)pattern).DocumentRange.GetText(-1).TrimEnd('\r', '\n');
-            else throw new InvalidOperationException();
+            else throw new ComposerUnavailable("editor-text-pattern-unavailable");
             return CodexPlaceholder(text) ? "" : text;
         }
         public ComposerReply Inspect()
         {
+            // Chromium may freeze its accessibility state while minimized too.
+            // Native identity remains useful to bind CDP, but these cached
+            // labels cannot authorize a minimized state action or text input.
+            if (Native.IsIconic(new IntPtr(request.Window))) throw new ComposerUnavailable("minimized-state-requires-cdp");
             if (sendAttempted)
             {
                 editor = SingleEditor(); ComposerContext fresh = BuildContext();
@@ -289,13 +400,23 @@ namespace CodexAutoResume
             // transaction. Unknown provider structure remains unsupported.
             bool blocked = Elements(ControlType.Window).Length > 0 || Elements(ControlType.Button).Any(e => Named(e,
                 "Submit", "提交", "Skip", "跳过", "Close voice mode", "退出语音模式", "Remove attachment", "移除附件", "Remove file", "移除文件"));
-            bool running = Elements(ControlType.Button).Any(e => Named(e, "Stop", "Stop generating", "停止", "停止生成"));
-            return new ComposerReply { Context = context, Safe = !blocked, Running = running, Empty = Text().Length == 0 };
+            var actions = ActionButtons();
+            var states = actions.Select(b => NamedState(b.Current.Name)).Distinct().ToArray();
+            ButtonState state = states.Length == 1 && actions.Length == 1 ? states[0] : ButtonState.Unknown;
+            object writable; bool canWrite = editor.TryGetCurrentPattern(ValuePattern.Pattern, out writable) && !((ValuePattern)writable).Current.IsReadOnly;
+            return new ComposerReply { Context = context, Safe = !blocked, Running = state == ButtonState.Running, Empty = Text().Length == 0,
+                State = state, BackgroundWritable = canWrite, ObservedUtc = DateTime.UtcNow };
         }
         public ComposerContext Context { get { return context; } }
         public void Focus(bool background)
         {
-            Check(); if (background) throw new NotSupportedException();
+            Check(); backgroundWrite = false;
+            if (background)
+            {
+                object writable;
+                if (!editor.TryGetCurrentPattern(ValuePattern.Pattern, out writable) || ((ValuePattern)writable).Current.IsReadOnly) throw new NotSupportedException();
+                backgroundWrite = true; return;
+            }
             // UIA SetFocus is itself the foreground fallback; some providers
             // activate their window through this accessibility operation.
             InputSnapshot input = Native.ReadInput();
@@ -327,7 +448,7 @@ namespace CodexAutoResume
         }
         public void Write(string text)
         {
-            Check(); if (!Inspect().Empty || !editor.Current.HasKeyboardFocus || Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new InvalidOperationException();
+            Check(); if (!Inspect().Empty || !backgroundWrite && (!editor.Current.HasKeyboardFocus || Native.GetForegroundWindow() != new IntPtr(request.Window))) throw new InvalidOperationException();
             object pattern;
             if (!editor.TryGetCurrentPattern(ValuePattern.Pattern, out pattern) || ((ValuePattern)pattern).Current.IsReadOnly) throw new NotSupportedException();
             written = text; ((ValuePattern)pattern).SetValue(text);
@@ -384,10 +505,10 @@ namespace CodexAutoResume
         }
         public void Send()
         {
-            Check(); if (sendAttempted || String.IsNullOrEmpty(written) || Text() != written || !Inspect().Safe || Inspect().Running || Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new InvalidOperationException();
-            var button = SendButton(); object pattern;
-            if (!button.TryGetCurrentPattern(InvokePattern.Pattern, out pattern)) throw new NotSupportedException();
-            sendAttempted = true; ((InvokePattern)pattern).Invoke();
+            Check(); if (sendAttempted || String.IsNullOrEmpty(written) || Text() != written || !Inspect().Safe || Inspect().Running || !backgroundWrite && Native.GetForegroundWindow() != new IntPtr(request.Window)) throw new InvalidOperationException();
+            var button = SendButton();
+            if (backgroundWrite) { var input = Native.ReadInput(); sendAttempted = true; BackgroundAction(button, input.Tick); }
+            else { object pattern; if (!button.TryGetCurrentPattern(InvokePattern.Pattern, out pattern)) throw new NotSupportedException(); sendAttempted = true; ((InvokePattern)pattern).Invoke(); }
         }
         public void Dispose() { }
     }

@@ -20,14 +20,16 @@ namespace CodexAutoResume
         QuotaLevel QuotaNow { get { return QuotaPolicy.Evaluate(usageSnapshot, usageError, preferences, DateTime.UtcNow); } }
         bool QuotaAllowsNormal() { return ScheduleAllows() && (!QuotaEnabled || !quotaPause.Owned && QuotaNow == QuotaLevel.Healthy); }
         bool QuotaCurrent(Target connected, int revision)
-        { string why; return !IsDisposed && monitoring && QuotaEnabled && generation == revision && target == connected && connected.ValidateIdentity(out why); }
+        { string why; return !IsDisposed && monitoring && QuotaEnabled && generation == revision && target == connected && (backgroundControlsActive ? connected.ValidateProcessIdentity(out why) : connected.ValidateIdentity(out why)); }
         void CancelQuota()
         {
+            if (controlCancellation != null) controlCancellation.Cancel();
             if (quotaCancellation != null) quotaCancellation.Cancel();
             quotaPause.Reset(); quotaQuiet.Reset(); quotaQuietState = ButtonState.Unknown; quotaContextRetry = DateTime.MinValue;
         }
         void QuotaUsageChanged()
         {
+            if (controlCancellation != null && (controlAccount != (usageSnapshot == null ? null : usageSnapshot.AccountKey) || controlMutating && QuotaEnabled && controlQuotaLevel != QuotaNow)) controlCancellation.Cancel();
             if (quotaCancellation != null && (QuotaNow != quotaOperationLevel || quotaPause.AccountKey != null && quotaPause.AccountKey != (usageSnapshot == null ? null : usageSnapshot.AccountKey) || timedAccount != null && timedAccount != TimedInstructionPolicy.AccountFingerprint(usageSnapshot == null ? null : usageSnapshot.AccountKey))) quotaCancellation.Cancel();
             if (QuotaEnabled && quotaPause.Phase == QuotaPhase.Waiting && QuotaNow == QuotaLevel.Healthy)
             { nextMonitor = DateTime.MinValue; quotaPause.NextSample = DateTime.MinValue; TickMonitor(); }
@@ -66,6 +68,21 @@ namespace CodexAutoResume
             if (!input.Valid || input.Held || input.IdleMilliseconds < RecoveryWindow.QuietMilliseconds) return false;
             string title = Native.Title(connected.Window);
             if (!QuotaCurrent(connected, revision) || !ScopeCheck(connected)) return false;
+            if (backgroundControlsActive && quotaPause.Context != null)
+            {
+                if (expected == ButtonState.Running) quotaPause.StopSent(DateTime.UtcNow);
+                else { quotaPause.Phase = QuotaPhase.Resuming; quotaPause.ActionAt = DateTime.UtcNow; }
+                DateTime actionAt = DateTime.UtcNow;
+                var changed = await ReadComposer(connected, expected == ButtonState.Running ? "pause" : "resume", quotaPause.Context);
+                if (!QuotaCurrent(connected, revision)) return changed.ActionAttempted;
+                if (changed.ActionAttempted && expected == ButtonState.Resume) gate.MarkAttempt(actionAt);
+                if (changed.Result == "Changed")
+                {
+                    quotaPause.Observe(changed.State, changed.ObservedUtc, DateTime.UtcNow);
+                    if (expected == ButtonState.Resume) { int prior = gate.Verified; gate.ObserveCaptured(changed.State, DateTime.UtcNow, changed.ObservedUtc); RecordVerified(prior); }
+                }
+                return changed.ActionAttempted;
+            }
             DateTime scopedBeforeCapture = DateTime.UtcNow;
             using (WindowFrame fresh = background.Checked ? await ReadBackground(connected, revision, true) : null)
             {
@@ -141,7 +158,7 @@ namespace CodexAutoResume
                 {
                     quotaPause.Context = composer.Context; quotaPause.AccountKey = usageSnapshot.AccountKey;
                     if (QuotaNow != QuotaLevel.Low) return true;
-                    if (await ClickQuota(connected, revision, ButtonState.Running, crop, d)) SetStatus("正在按额度暂停，等待画面确认");
+                    if (await ClickQuota(connected, revision, ButtonState.Running, crop, d)) SetStatus(quotaPause.Phase == QuotaPhase.Waiting ? "额度暂停中 · 每分钟检查画面" : "正在按额度暂停，等待画面确认");
                     else { quotaPause.Reset(); SetStatus("点击前状态变化，已取消本次点击并重新观察"); }
                     return true;
                 }

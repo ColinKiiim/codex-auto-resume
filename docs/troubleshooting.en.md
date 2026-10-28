@@ -27,11 +27,11 @@ A stable resume triangle triggers a pre-click recheck, then a resume attempt. Th
 
 ## Can it resume Codex while another window completely covers it?
 
-Enable **后台监测** (Background monitoring) in Settings, keeping Codex unminimized. The target must supply fresh frames and accept window messages. Use F4 / **后台自测** (Background self-test) to check the local capture and input path, then verify your own Codex pause scenario. The self-test uses the utility’s own window, so it does not prove every target version accepts background input.
+Enable **后台监测** (Background monitoring) in Settings. Version 1.1.19 prefers independently bound composer controls; image fallback still requires fresh target frames and window-message support. Use F4 / **后台自测** (Background self-test) to check the local capture and input path, then verify your own Codex pause scenario. The self-test uses the utility’s own window, so it does not prove every target version accepts background input.
 
 ## What about minimized windows, sleep, or the lock screen?
 
-Minimized targets wait until restored. Lock-screen operation is not a supported scenario, and monitoring cannot run while the computer is asleep. “Fully covered” means covered by another ordinary desktop window.
+Minimized operation requires an existing ownership-verified CDP endpoint; unavailable endpoints wait without restoring the target. Cached minimized UIA labels and image clicks are rejected. Lock-screen operation is not a supported scenario, and monitoring cannot run while the computer is asleep. “Fully covered” means covered by another ordinary desktop window.
 
 ## Why is the running square unchanged for a long time?
 

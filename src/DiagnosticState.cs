@@ -18,6 +18,9 @@ namespace CodexAutoResume
         {
             if (request == null || request.Operation != "diagnostic-inspect" || !ComposerWorker.Valid(request, null))
                 return new Dictionary<string, object> { { "result", "blocked-target" } };
+            object composer;
+            try { using (var bound = new AccessibleComposer(request, false)) composer = bound.Describe(); }
+            catch (Exception error) { composer = new { result = "unavailable", reason = error is ComposerUnavailable ? error.Message : error.GetType().Name }; }
             var documents = new List<string>(); var current = new List<string>();
             var buttons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             int nodes = 0, editors = 0, offscreenEditors = 0;
@@ -30,6 +33,7 @@ namespace CodexAutoResume
                 if (element == null) return;
                 if (++nodes > 1600 || depth > 36 || DateTime.UtcNow >= request.ExpiresUtc.ToUniversalTime()) { truncated = true; return; }
                 int type = Convert.ToInt32(element.Property(30003));
+                if (type == ControlType.TitleBar.Id) return; // Window Restore is not a chat Resume control.
                 string css = element.PropertyEx(30012, true) as string ?? "", nameValue = element.PropertyEx(30005, true) as string ?? "";
                 // Do not traverse chat message bodies or return their text.
                 if (css.Contains("thread-scroll-container") || css.StartsWith("group/sidebar-rail ", StringComparison.Ordinal)) return;
@@ -48,7 +52,8 @@ namespace CodexAutoResume
             visit(automation.ElementFromHandle(new IntPtr(request.Window)), 0);
             if (!ComposerWorker.Valid(request, null)) return new Dictionary<string, object> { { "result", "target-changed" } };
             return new Dictionary<string, object> { { "result", "observed" }, { "diagnosticOnly", true }, { "verifiedConversation", false }, { "nodes", nodes },
-                { "truncated", truncated }, { "documentTitleHashes", documents }, { "selectedRowTitleHashes", current }, { "editorCount", editors }, { "offscreenEditors", offscreenEditors }, { "knownButtons", buttons } };
+                { "truncated", truncated }, { "documentTitleHashes", documents }, { "selectedRowTitleHashes", current }, { "editorCountOutsideThreadContent", editors },
+                { "offscreenEditorsOutsideThreadContent", offscreenEditors }, { "knownButtonsOutsideThreadContent", buttons }, { "composer", composer } };
         }
         internal static int Run()
         {

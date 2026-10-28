@@ -41,7 +41,7 @@ namespace CodexAutoResume
         {
             List<IntPtr> windows = new List<IntPtr>();
             EnumWindows(delegate(IntPtr h, IntPtr unused)
-            { RECT r; if (IsWindowVisible(h) && GetWindow(h, 4) == IntPtr.Zero && GetWindowRect(h, out r) && r.Right - r.Left >= 250 && r.Bottom - r.Top >= 160) windows.Add(h); return true; }, IntPtr.Zero);
+            { RECT r; if (IsWindowVisible(h) && GetWindow(h, 4) == IntPtr.Zero && GetWindowRect(h, out r) && (IsIconic(h) || r.Right - r.Left >= 250 && r.Bottom - r.Top >= 160)) windows.Add(h); return true; }, IntPtr.Zero);
             return windows;
         }
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -241,6 +241,13 @@ namespace CodexAutoResume
 
         internal bool ValidateIdentity(out string reason)
         {
+            if (!ValidateProcessIdentity(out reason)) return false;
+            if (Native.IsIconic(Window)) { reason = "Codex 已最小化，等待还原，监测继续"; return false; }
+            if (!Native.IsWindowVisible(Window)) { reason = "Codex 窗口已隐藏，等待重新显示，监测继续"; return false; }
+            return true;
+        }
+        internal bool ValidateProcessIdentity(out string reason)
+        {
             reason = "";
             if (!Native.IsWindow(Window)) { reason = "原窗口已关闭，请重新连接"; return false; }
             try
@@ -250,8 +257,6 @@ namespace CodexAutoResume
                     { reason = "进程已变化，请重新连接"; return false; }
             }
             catch { reason = "无法核实原进程，请重新连接"; return false; }
-            if (Native.IsIconic(Window)) { reason = "Codex 已最小化，等待还原，监测继续"; return false; }
-            if (!Native.IsWindowVisible(Window)) { reason = "Codex 窗口已隐藏，等待重新显示，监测继续"; return false; }
             return true;
         }
 

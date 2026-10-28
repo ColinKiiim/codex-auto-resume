@@ -15,8 +15,10 @@ namespace CodexAutoResume
         public string Editor { get; set; }
         public string Title { get; set; }
         public int Port { get; set; }
+        public string PageId { get; set; }
+        public string NativeBinding { get; set; }
         internal static bool SameConversation(ComposerContext a, ComposerContext b)
-        { return a != null && b != null && a.Backend == b.Backend && a.Conversation == b.Conversation && a.Title == b.Title && a.Port == b.Port; }
+        { return a != null && b != null && a.Backend == b.Backend && a.Conversation == b.Conversation && a.Title == b.Title && a.Port == b.Port && a.PageId == b.PageId && a.NativeBinding == b.NativeBinding; }
     }
     public sealed class ComposerRequest
     {
@@ -40,6 +42,11 @@ namespace CodexAutoResume
         public bool Empty { get; set; }
         public bool Safe { get; set; }
         public string Stage { get; set; }
+        public ButtonState State { get; set; }
+        public bool BackgroundWritable { get; set; }
+        public bool ActionAttempted { get; set; }
+        public DateTime ObservedUtc { get; set; }
+        public string BindingNote { get; set; }
     }
 
     internal static class ComposerBridge
@@ -64,7 +71,7 @@ namespace CodexAutoResume
                 RedirectStandardError = true, StandardOutputEncoding = System.Text.Encoding.UTF8 } })
             using (var job = new UsageJob())
             {
-                deadline.CancelAfter(20000);
+                deadline.CancelAfter((int)Math.Max(1, Math.Min(20000, (expires.ToUniversalTime() - DateTime.UtcNow).TotalMilliseconds)));
                 process.Start(); job.Add(process);
                 // This grants only an eligible child; Windows can deny it when
                 // CAR has no activation rights. Never attach input queues.

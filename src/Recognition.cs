@@ -323,5 +323,6 @@ namespace CodexAutoResume
             AwaitingRunning = true; pendingVerification = true; attemptedAt = now; resumeFrames = 0; runningFrames = 0; Attempts++;
         }
         public void BreakStreak() { resumeFrames = 0; runningFrames = 0; }
+        internal void CancelPending() { AwaitingRunning = pendingVerification = false; BreakStreak(); }
     }
 }

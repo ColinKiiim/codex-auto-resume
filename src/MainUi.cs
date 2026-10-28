@@ -134,13 +134,14 @@ namespace CodexAutoResume
             // Scale relative to the existing action column, which WinForms scales
             // with DPI; do not reapply unscaled pixel constants after autoscaling.
             float scale = stateLayout.ColumnStyles[2].Width / 96f;
-            UiText.Set(previewCaption, question ? "问答区域" : "采样图");
+            UiText.Set(previewCaption, question ? "问答区域" : controlPreview ? "后台控件状态" : "采样图");
             stateLayout.ColumnStyles[0].Width = Math.Max((question ? 224 : 64) * scale, TextRenderer.MeasureText(previewCaption.Text, previewCaption.Font).Width + 8 * scale);
             preview.Size = new Size((int)((question ? 208 : 48) * scale), (int)((question ? 72 : 48) * scale));
 
         }
         void ResetPreview()
         {
+            controlPreview = false;
             previewContentAt = DateTime.MinValue;
             Image old = preview.Image; preview.Image = null; if (old != null) old.Dispose();
             recoveryWindow.Reset(); lastObservedState = ButtonState.Unknown;
@@ -156,7 +157,7 @@ namespace CodexAutoResume
         void ShowPreviewDetail()
         {
             if (preview.Image == null) return;
-            using (Form detail = new Form { Text = questionPreview ? "最近识别 · 问答区域" : "最近识别 · 采样图", Font = Font, ClientSize = questionPreview ? new Size(760, 440) : new Size(240, 240), StartPosition = FormStartPosition.CenterParent, Icon = Icon })
+            using (Form detail = new Form { Text = questionPreview ? "最近识别 · 问答区域" : controlPreview ? "后台控件状态" : "最近识别 · 采样图", Font = Font, ClientSize = questionPreview ? new Size(760, 440) : new Size(240, 240), StartPosition = FormStartPosition.CenterParent, Icon = Icon })
             using (Bitmap snapshot = new Bitmap(preview.Image))
             {
                 detail.Controls.Add(new PictureBox { Dock = DockStyle.Fill, Image = snapshot, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(35, 35, 35) });
@@ -308,7 +309,7 @@ namespace CodexAutoResume
             language.SelectedIndexChanged += delegate { UiText.SetLanguage(language.SelectedIndex == 1 ? "en" : "zh-CN"); };
             common.Controls.Add(language);
             UiText.Set(background, "后台监测"); common.Controls.Add(background);
-            common.Controls.Add(new Label { Text = "后台允许窗口被遮挡；Codex 需保持未最小化\n前台模式需要 Codex 位于前台，按钮可见", AutoSize = true, MaximumSize = new Size(510, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 8, 0, 16) });
+            common.Controls.Add(new Label { Text = "后台支持遮挡；接口可核验时也支持最小化\n最小化时接口不可用则等待；前台模式需按钮可见", AutoSize = true, MaximumSize = new Size(510, 0), ForeColor = Color.DimGray, Margin = new Padding(0, 8, 0, 16) });
             CheckBox checkUpdates = new CheckBox { Text = "自动检查更新", AutoSize = true, Checked = preferences.CheckUpdates };
             checkUpdates.CheckedChanged += delegate { preferences.CheckUpdates = checkUpdates.Checked; nextUpdateCheck = DateTime.UtcNow.AddSeconds(1); SavePreferences(); }; common.Controls.Add(checkUpdates);
             AddScopeSettings(common);

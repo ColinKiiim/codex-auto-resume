@@ -64,7 +64,8 @@ namespace CodexAutoResume
             if (!input.Valid) return "输入状态尚未核实";
             if (input.Held || input.IdleMilliseconds < RecoveryWindow.QuietMilliseconds) return "等待输入空闲";
             if (scheduleReason != null && scheduleReasonGeneration == generation && (DateTime.UtcNow - scheduleReasonAt).TotalSeconds < 15) return scheduleReason;
-            if (activity.LastContent != DateTime.MinValue && (DateTime.UtcNow - activity.LastContent).TotalSeconds >= 0 && (DateTime.UtcNow - activity.LastContent).TotalSeconds <= 5 &&
+            DateTime observedAt = backgroundControlsActive ? activity.LastSample : activity.LastContent;
+            if (observedAt != DateTime.MinValue && (DateTime.UtcNow - observedAt).TotalSeconds >= 0 && (DateTime.UtcNow - observedAt).TotalSeconds <= 5 &&
                 (lastObservedState == ButtonState.Voice || lastObservedState == ButtonState.VoiceClose))
                 return quotaPause.Owned ? "等待原对话继续入口核验" : "没有暂停三角形；此恢复计划不会主动发送消息";
             return "已到时间，等待恢复条件（具体原因未核实）";

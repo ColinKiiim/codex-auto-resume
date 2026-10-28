@@ -15,6 +15,25 @@ namespace CodexAutoResume
         [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr window, out Native.RECT rect);
         [DllImport("user32.dll", SetLastError = true)] static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
+        // Coordinates come from a freshly bound accessibility control, never a
+        // cached captured frame. Minimized targets require CDP; Chromium may
+        // also retain old accessibility geometry while minimized.
+        internal static bool SendControl(IntPtr window, IntPtr child, Rectangle control, Func<bool> validate)
+        {
+            if (Native.IsIconic(window) || control.Width <= 0 || control.Height <= 0 || Native.GetAncestor(child, 2) != window || !IsWindowEnabled(child)) return false;
+            var point = new Native.POINT { X = control.Left + control.Width / 2, Y = control.Top + control.Height / 2 };
+            Native.RECT rect;
+            if (!ScreenToClient(child, ref point) || !GetClientRect(child, out rect) || !rect.Rectangle.Contains(point.X, point.Y) ||
+                point.X < 0 || point.X > 32767 || point.Y < 0 || point.Y > 32767 || !validate()) return false;
+            var className = new StringBuilder(256); GetClassName(child, className, 256);
+            if (className.ToString() != "Chrome_RenderWidgetHostHWND") return false;
+            LastRoute = "UIA-bound WM mouse messages";
+            IntPtr packed = new IntPtr((point.Y << 16) | (point.X & 0xffff));
+            if (!PostMessage(child, 0x0200, IntPtr.Zero, packed) || !PostMessage(child, 0x0201, new IntPtr(1), packed)) throw new InvalidOperationException("Control message rejected");
+            if (!PostMessage(child, 0x0202, IntPtr.Zero, packed)) { PostMessage(child, 0x0202, IntPtr.Zero, packed); throw new InvalidOperationException("Control release rejected"); }
+            return true;
+        }
+
         // Window-message input only. Never activates a window or moves the pointer.
         public static bool Send(IntPtr window, Rectangle expectedBounds, Point center, Func<bool> validate)
         {

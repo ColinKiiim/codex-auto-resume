@@ -84,7 +84,7 @@ namespace CodexAutoResume
             StartPosition = FormStartPosition.CenterScreen;
             loadingOptions = true; background.Checked = preferences.Background; cropSize.Value = preferences.CropSize; loadingOptions = false;
             UiText.Language = preferences.Language;
-            InitializeCompactUi(); UiText.Apply(this); SetPreviewKind(false);
+            InitializeCompactUi(); UiText.Apply(this); SetPreviewKind(false); StartControlPolling();
             UiText.Changed += RefreshLanguage;
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; } else if (e.KeyCode == Keys.F2) { ShowSelfCheck(); e.Handled = true; } else if (e.KeyCode == Keys.F3) { ShowLicense(); e.Handled = true; } else if (e.KeyCode == Keys.F4) { ShowBackgroundSelfCheck(); e.Handled = true; } };
@@ -245,7 +245,15 @@ namespace CodexAutoResume
             if (target == null)
             { updating = true; try { Discover(); } catch (Exception e) { SetStatus("窗口检测暂不可用，继续等待：" + e.Message); } finally { updating = false; } return; }
             if (!Native.IsWindow(target.Window)) { CancelSchedule(true); CancelQuota(); generation++; target = null; ResetPreview(); waitingForChoice = false; nextDiscovery = DateTime.MinValue; WindowCapture.StopCapture(); SetStatus("正在寻找 Codex"); return; }
-            if (background.Checked) { TickBackground(); return; }
+            if (background.Checked)
+            {
+                Target selected = target; int selectedRevision = generation;
+                updating = true;
+                try { if (await TickBackgroundControls(selected, selectedRevision)) return; }
+                finally { updating = false; }
+                if (!Current(selected, selectedRevision)) return;
+                TickBackground(); return;
+            }
             updating = true;
             Target connected = target; int revision = generation;
             try
@@ -343,6 +351,7 @@ namespace CodexAutoResume
         {
             UsagePulse();
             PulseDiagnosticState();
+            PulseControlEvidence();
             TickTimedInstructions();
             TickScope();
             if (resumeSchedule.Active && !resumeSchedule.Allows(DateTime.UtcNow, ScheduleClock, ScheduleTarget, ScheduleZone) && resumeSchedule.Invalid)
@@ -508,6 +517,7 @@ namespace CodexAutoResume
         }
         void UpdatePreview(Bitmap b, Detection d)
         {
+            if (controlPreview) { controlPreview = false; SetPreviewKind(false); }
             WatchResume(d.State);
             Rectangle bounds = d.ButtonBounds.IsEmpty ? new Rectangle(Point.Empty, b.Size) : Rectangle.Inflate(d.ButtonBounds, 3, 3);
             bounds.Intersect(new Rectangle(Point.Empty, b.Size));

@@ -12,6 +12,14 @@ namespace CodexAutoResume
         static readonly ConditionalWeakTable<Control, Binding> bindings = new ConditionalWeakTable<Control, Binding>();
         static readonly Dictionary<string, string> english = new Dictionary<string, string>
         {
+            { "后台控件状态", "Background control state" },
+            { "聊天已变化，请手动核对额度暂停", "Chat changed; check the quota pause manually" },
+            { "后台支持遮挡；接口可核验时也支持最小化\n最小化时接口不可用则等待；前台模式需按钮可见", "Background supports covered windows and verified minimized controls\nMinimized targets wait if controls are unavailable; foreground needs a visible button" },
+            { "后台控件暂不可核验，等待重新确认；不会使用旧截图点击", "Background controls unavailable; waiting for a verified context" },
+            { "后台控件检测到问答或其他待处理状态，等待用户", "A question or another pending state needs your attention" },
+            { "后台操作已投递，等待原聊天控件确认运行", "Background action attempted; waiting for the original chat to confirm running" },
+            { "后台操作前状态变化，重新核验原聊天", "State changed before the action; rechecking the original chat" },
+            { "原对话有草稿，等待用户处理", "The original chat has a draft; waiting for you" },
             { "详细诊断（含原始窗口截图）", "Detailed diagnostics (includes window images)" },
             { "只读 UIA 对照（可能影响目标重绘）", "Read-only UIA comparison (may affect repainting)" },
             { "仅本机保存，可能包含聊天内容；本次开启最多 1 小时\n截图按 180 组 / 128 MB 滚动，文本可复制，诊断包包含近期可用截图", "Saved locally; may include chats; enabled for up to 1 hour\nRolling limit: 180 sets / 128 MB; export includes available recent images" },

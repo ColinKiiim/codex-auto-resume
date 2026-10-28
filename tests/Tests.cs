@@ -28,11 +28,26 @@ namespace CodexAutoResume
                 Group("Quota pause safety", Quota);
                 Group("Scheduled recovery safety", Schedule);
                 Group("Scoped actions and timed instructions", ScopedInstructions);
+                Group("Semantic context and state boundaries", SemanticControls);
             }
             catch (Exception error) { failures++; Console.Error.WriteLine(error); }
             string result = "Assertions: " + assertions + "; failures: " + failures;
             Console.WriteLine(result); File.WriteAllText(Path.Combine(root, "tests", "last-result.txt"), result + Environment.NewLine);
             return failures == 0 ? 0 : 1;
+        }
+        static void SemanticControls()
+        {
+            Check(AccessibleComposer.NamedState("恢复") == ButtonState.Resume && AccessibleComposer.NamedState("停止") == ButtonState.Running, "exact composer state labels");
+            Check(AccessibleComposer.NamedState("恢复默认设置") == ButtonState.Unknown && AccessibleComposer.NamedState("Retry settings") == ButtonState.Unknown, "unrelated action labels remain unknown");
+            var a = new ComposerContext { Backend = "CDP", Conversation = "chat", Title = "title", Port = 9000, PageId = "page", NativeBinding = "native", Editor = "old" };
+            var b = new ComposerContext { Backend = "CDP", Conversation = "chat", Title = "title", Port = 9000, PageId = "page", NativeBinding = "native", Editor = "new" };
+            Check(ComposerContext.SameConversation(a, b), "readonly editor replacement preserves conversation identity");
+            b.PageId = "other"; Check(!ComposerContext.SameConversation(a, b), "another page is another binding");
+            b.PageId = a.PageId; b.NativeBinding = "other"; Check(!ComposerContext.SameConversation(a, b), "another native conversation is another binding");
+            var gate = new ResumeGate(); DateTime now = DateTime.UtcNow; gate.MarkAttempt(now); gate.CancelPending(); gate.ObserveCaptured(ButtonState.Running, now.AddSeconds(1), now.AddSeconds(1));
+            Check(gate.Attempts == 1 && gate.Verified == 0 && !gate.AwaitingRunning, "a new conversation cannot confirm the previous conversation's action");
+            var activity = new MonitorActivity(); activity.Start(now); activity.Control(now);
+            Check(activity.NewContent == 0 && activity.LastContent == DateTime.MinValue && activity.LastSample == now, "control observations do not fabricate system image timestamps");
         }
         static void Recognition(string root)
         {
