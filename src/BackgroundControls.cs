@@ -13,6 +13,8 @@ namespace CodexAutoResume
         Target backgroundTarget;
         int backgroundRevision = -1;
         bool backgroundControlsActive;
+        bool backgroundNeedsUser;
+        bool BackgroundNeedsUser { get { return background.Checked && backgroundControlsActive && backgroundNeedsUser; } }
         DateTime nextControlRead, controlUnavailableUntil;
         CancellationTokenSource controlCancellation;
         string controlAccount;
@@ -84,7 +86,7 @@ namespace CodexAutoResume
             if (connected.Demo) return false;
             if (backgroundTarget != connected || backgroundRevision != revision)
             {
-                backgroundContext = null; backgroundControlsActive = false; backgroundTarget = connected; backgroundRevision = revision;
+                backgroundContext = null; backgroundControlsActive = false; backgroundNeedsUser = true; backgroundTarget = connected; backgroundRevision = revision;
                 nextControlRead = controlUnavailableUntil = DateTime.MinValue;
             }
             DateTime now = DateTime.UtcNow;
@@ -97,6 +99,7 @@ namespace CodexAutoResume
                 if (!Current(connected, revision)) return true;
                 if (reply.Result != "Observed" || reply.Context == null)
                 {
+                    backgroundNeedsUser = true;
                     controlUnavailableUntil = DateTime.UtcNow.AddSeconds(5);
                     journal.Write("diagnostics.log", "control-unavailable", "stage=" + reply.Stage + "; binding-note=" + reply.BindingNote + "; had-binding=" + backgroundControlsActive, DateTime.UtcNow);
                     if (backgroundControlsActive || Native.IsIconic(connected.Window)) { SetStatus("后台控件暂不可核验，等待重新确认；不会使用旧截图点击"); return true; }
@@ -107,7 +110,7 @@ namespace CodexAutoResume
                     gate.CancelPending(); recoveryWindow.Reset(); quotaQuiet.Reset();
                     if (quotaPause.Owned) { quotaPause.Phase = QuotaPhase.Uncertain; SetStatus("聊天已变化，请手动核对额度暂停"); return true; }
                 }
-                backgroundContext = reply.Context; backgroundControlsActive = true;
+                backgroundContext = reply.Context; backgroundControlsActive = true; backgroundNeedsUser = !reply.Safe;
                 ShowControlObservation(reply);
                 int verified = gate.Verified;
                 ObserveSchedule(reply.State, reply.ObservedUtc);
@@ -137,6 +140,7 @@ namespace CodexAutoResume
             catch (Exception error)
             {
                 if (!Current(connected, revision)) return true;
+                backgroundNeedsUser = true;
                 journal.Write("diagnostics.log", "control-unavailable", "error=" + error.GetType().Name + "; had-binding=" + backgroundControlsActive, DateTime.UtcNow);
                 controlUnavailableUntil = DateTime.UtcNow.AddSeconds(5);
                 if (backgroundControlsActive || Native.IsIconic(connected.Window)) { SetStatus("后台控件暂不可核验，等待重新确认；不会使用旧截图点击"); return true; }

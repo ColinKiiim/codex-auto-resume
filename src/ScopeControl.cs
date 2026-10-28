@@ -134,6 +134,9 @@ namespace CodexAutoResume
         {
             if (!ComposerWorker.Valid(request, inputTick)) throw new InvalidOperationException("input before navigation");
             if (Native.IsIconic(window)) throw new InvalidOperationException("minimized navigation requires a bound debug endpoint");
+            using (var composer = new AccessibleComposer(request, false))
+                if (!composer.Inspect().Safe) throw new ComposerUnavailable("navigation-needs-user");
+            if (!ComposerWorker.Valid(request, inputTick)) throw new InvalidOperationException("input after navigation safety check");
             if (Native.GetForegroundWindow() == window) return false;
             // This Codex provider can block Invoke itself while backgrounded,
             // so resolve activation before committing the single navigation.
@@ -382,7 +385,7 @@ namespace CodexAutoResume
         async void TickScope()
         {
             if (!preferences.LimitScope || scopeSelection == null || scopeSelection.Kind != "project" || scopeUncertain || scopeBusy || timedBusy || updating || quotaCancellation != null ||
-                !monitoring || !automatic.Checked || target == null || target.Window.ToInt64() != scopeWindow || target.ProcessId != scopeProcessId || target.ProcessStart != scopeProcessStart || diagnosing || questions.Waiting || quotaPause.Owned || gate.AwaitingRunning || DateTime.UtcNow < nextScopeSwitch) return;
+                !monitoring || !automatic.Checked || target == null || target.Window.ToInt64() != scopeWindow || target.ProcessId != scopeProcessId || target.ProcessStart != scopeProcessStart || diagnosing || questions.Waiting || BackgroundNeedsUser || quotaPause.Owned || gate.AwaitingRunning || DateTime.UtcNow < nextScopeSwitch) return;
             InputSnapshot input = inputReader();
             if (!input.Valid || input.Held || input.IdleMilliseconds < RecoveryWindow.QuietMilliseconds) return;
             Target connected = target; int revision = generation; ScopeEntry selected = scopeSelection;

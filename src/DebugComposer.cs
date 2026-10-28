@@ -185,13 +185,17 @@ namespace CodexAutoResume
         public void ChangeState(ButtonState expected) { Operation(expected == ButtonState.Resume ? "resume" : "pause", ""); }
         internal void Navigate(ScopeReply proof, ScopeEntry destination, bool expand, uint tick, Action reserve)
         {
-            Operation("inspect", "");
+            var state = Operation("inspect", "");
+            if (!(bool)Get(state, "safe")) throw new ComposerUnavailable("navigation-needs-user");
             using (var native = new AccessibleComposer(request, false))
                 if (native.Context.Conversation != context.NativeBinding || native.Context.Title != proof.CurrentTitle) throw new InvalidOperationException("Navigation native binding changed");
             if (!ComposerWorker.Valid(request, tick)) throw new InvalidOperationException("Input before navigation");
             const string navigate = @"function(expected,currentTitle,entry,expand){
                 const visible=e=>!!(e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&!e.closest('[aria-hidden=true],[inert]'));
                 if(!this.isConnected||location.protocol!=='app:'||location.hostname!=='-'||document.title!==expected.Title||document.title!==currentTitle)throw Error('Page changed');
+                if([...document.querySelectorAll('[role=dialog],[role=alertdialog],[data-testid*=question]')].some(visible)
+                    ||[...document.querySelectorAll('button')].some(b=>visible(b)&&!b.disabled&&b.getAttribute('aria-disabled')!=='true'
+                        &&/^(skip|submit|跳过|提交|close voice mode|退出语音模式|remove attachment|remove file|移除附件|移除文件)$/i.test((b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim())))throw Error('Navigation needs user');
                 const rows=[...document.querySelectorAll('[data-app-action-sidebar-thread-id]')].filter(visible);
                 const active=rows.filter(e=>e.getAttribute('aria-current')==='page');
                 if(active.length!==1||active[0].getAttribute('data-app-action-sidebar-thread-id')!==expected.Conversation)throw Error('Selected conversation changed');

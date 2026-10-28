@@ -190,7 +190,7 @@ namespace CodexAutoResume
             return !IsDisposed && monitoring && automatic.Checked && target == connected && generation == revision && connected.ValidateProcessIdentity(out why) &&
                 connected.Window.ToInt64() == task.Window && connected.ProcessId == task.ProcessId && connected.ProcessStart == task.ProcessStart &&
                 TimedInstructionPolicy.SameAccount(usageSnapshot, usageError, task.AccountKey, DateTime.UtcNow) &&
-                (!preferences.QuotaControl || QuotaNow == QuotaLevel.Healthy) && !questions.Waiting && !quotaPause.Owned && !gate.AwaitingRunning && ScheduleZone == task.Zone;
+                (!preferences.QuotaControl || QuotaNow == QuotaLevel.Healthy) && !questions.Waiting && !BackgroundNeedsUser && !quotaPause.Owned && !gate.AwaitingRunning && ScheduleZone == task.Zone;
         }
         async void TickTimedInstructions()
         {

@@ -6,7 +6,7 @@
 
 **Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. Compact footer bars also show the current login's remaining quota and reset times. One EXE, no API key.
 
-> Version 1.1.19 prefers verified composer controls to address missed pauses caused by stale fully covered captures. An existing, independently verified endpoint also enables minimized operation. Recent 30-minute log/diagnostic export remains available; see the [version notes](docs/releases/v1.1.19.md) for support conditions and outstanding device acceptance.
+> Version 1.1.20 prefers verified composer controls to address missed pauses caused by stale fully covered captures. An existing, independently verified endpoint also enables minimized operation, with pending questions blocking navigation. Recent 30-minute log/diagnostic export remains available; see the [version notes](docs/releases/v1.1.20.md) for support conditions and outstanding device acceptance.
 
 ## Pause on low quota, continue after recovery
 
