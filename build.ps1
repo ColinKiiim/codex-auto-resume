@@ -20,6 +20,7 @@ $sources = @($sources) + @($generatedVersion)
 $commonArgs = @('/nologo', '/optimize+', '/platform:x64', '/utf8output', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', ('/win32manifest:' + $generatedManifest))
 $commonArgs += '/reference:' + (Join-Path $env:WINDIR 'System32\WinMetadata\Windows.Graphics.winmd')
 $commonArgs += @('/reference:System.Net.Http.dll', '/reference:System.Web.Extensions.dll')
+$commonArgs += @('/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll')
 $commonArgs += '/reference:System.Management.dll'
 foreach ($frameworkAssembly in @('UIAutomationClient', 'UIAutomationTypes', 'WindowsBase')) {
     $frameworkPath = Get-ChildItem -LiteralPath (Join-Path $env:WINDIR ('Microsoft.NET\assembly\GAC_MSIL\' + $frameworkAssembly)) -Filter ($frameworkAssembly + '.dll') -Recurse | Select-Object -First 1
@@ -42,7 +43,7 @@ $commonArgs += '/resource:' + (Join-Path $projectRoot 'LICENSE') + ',LICENSE'
 if ($LASTEXITCODE -ne 0) { throw 'App compilation failed.' }
 $testSource = Join-Path $projectRoot 'tests\Tests.cs'
 if (Test-Path -LiteralPath $testSource) {
-    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.Tests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.Tests.exe')) @sources $testSource (Join-Path $projectRoot 'tests\UpdateTests.cs') (Join-Path $projectRoot 'tests\UsageTests.cs')
+    & $compiler @commonArgs '/target:exe' '/main:CodexAutoResume.Tests' ('/out:' + (Join-Path $distPath 'CodexAutoResume.Tests.exe')) @sources $testSource (Join-Path $projectRoot 'tests\UpdateTests.cs') (Join-Path $projectRoot 'tests\UsageTests.cs') (Join-Path $projectRoot 'tests\CaptureDiagnosticTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & (Join-Path $distPath 'CodexAutoResume.Tests.exe') $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }

@@ -49,12 +49,14 @@ namespace CodexAutoResume
     // a log must not halt monitoring or create a repeated dialog.
     internal sealed class MonitorLog
     {
+        readonly object sync = new object();
         readonly string directory;
         readonly long limit;
         public bool WriteFailed { get; private set; }
-        public MonitorLog(string directory, long limit = 2 * 1024 * 1024) { this.directory = directory; this.limit = limit; }
+        public MonitorLog(string directory, long limit = 8 * 1024 * 1024) { this.directory = directory; this.limit = limit; }
         public void Write(string fileName, string category, string message, DateTime now)
         {
+            lock (sync)
             try
             {
                 Directory.CreateDirectory(directory);
@@ -69,6 +71,17 @@ namespace CodexAutoResume
                 File.AppendAllText(path, line); WriteFailed = false;
             }
             catch { WriteFailed = true; }
+        }
+        internal RecentDiagnosticLogs Recent(DateTime now)
+        {
+            var result = new RecentDiagnosticLogs { FromUtc = now.ToUniversalTime().AddMinutes(-30), UntilUtc = now.ToUniversalTime() };
+            lock (sync)
+            foreach (string name in new[] { "diagnostics.log.1", "diagnostics.log", "events.log.1", "events.log" })
+            {
+                string path = Path.Combine(directory, name);
+                if (File.Exists(path)) result.Files[name] = RecentDiagnosticLogs.Filter(File.ReadAllText(path), result.FromUtc.ToLocalTime(), result.UntilUtc.ToLocalTime());
+            }
+            return result;
         }
     }
 }

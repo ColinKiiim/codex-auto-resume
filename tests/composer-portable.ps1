@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $resolved = (Resolve-Path -LiteralPath $ExecutablePath).Path
 $cases = @(
     @{ Mode = '--composer-worker'; Request = '{"Window":0,"ProcessId":0,"Operation":"inspect","ExpiresUtc":"/Date(0)/"}' },
-    @{ Mode = '--scope-worker'; Request = '{"Target":{"Window":0,"ProcessId":0,"ExpiresUtc":"/Date(0)/"},"Operation":"read"}' }
+    @{ Mode = '--scope-worker'; Request = '{"Target":{"Window":0,"ProcessId":0,"ExpiresUtc":"/Date(0)/"},"Operation":"read"}' },
+    @{ Mode = '--diagnostic-state-worker'; Request = '{"Window":0,"ProcessId":0,"Operation":"diagnostic-inspect","ExpiresUtc":"2000-01-01T00:00:00Z"}' }
 )
 foreach ($case in $cases) {
     $worker = New-Object Diagnostics.Process
@@ -24,7 +25,8 @@ foreach ($case in $cases) {
         $errors = $worker.StandardError.ReadToEndAsync()
         if (-not $worker.WaitForExit(10000)) { throw ('Portable worker exceeded its deadline: ' + $case.Mode) }
         $reply = $output.GetAwaiter().GetResult() | ConvertFrom-Json
-        if ($worker.ExitCode -ne 0 -or $null -eq $reply -or $reply.Result -ne 'Blocked' -or $errors.GetAwaiter().GetResult().Length -ne 0) { throw ('GUI executable failed its redirected worker protocol: ' + $case.Mode) }
+        $expectedResult = if ($case.Mode -eq '--diagnostic-state-worker') { 'blocked-target' } else { 'Blocked' }
+        if ($worker.ExitCode -ne 0 -or $null -eq $reply -or $reply.Result -ne $expectedResult -or $errors.GetAwaiter().GetResult().Length -ne 0) { throw ('GUI executable failed its redirected worker protocol: ' + $case.Mode) }
         if ($case.Mode -eq '--composer-worker' -and $reply.Stage -notlike 'open:*') { throw 'Composer request did not reject at the open boundary' }
         Write-Output ('PASS: production GUI ' + $case.Mode + ' returns a bounded blocked response through redirected pipes, without a console or target actions')
     } finally {

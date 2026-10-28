@@ -18,6 +18,7 @@ namespace CodexAutoResume
         [STAThread] public static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--composer-worker") return ComposerWorker.Run();
+            if (args.Length == 1 && args[0] == "--diagnostic-state-worker") return DiagnosticStateWorker.Run();
             Native.SetDpi(); DesktopIdentity.Initialize(); Application.EnableVisualStyles();
             // Tests must never add fixture recoveries or settings to the user's profile.
             string testData = Path.Combine(Path.GetTempPath(), "CAR-workflow-" + Guid.NewGuid().ToString("N"));
@@ -41,6 +42,8 @@ namespace CodexAutoResume
                         var automatic = Field<CheckBox>(main, "automatic"); var background = Field<CheckBox>(main, "background");
                         Require(!automatic.Checked, "ordinary startup observes without automatic clicking");
                         Field<Button>(main, "toggle").PerformClick(); background.Checked = true; automatic.Checked = true;
+                        var evidence = (CaptureEvidence)main.GetType().GetProperty("Evidence", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(main, null);
+                        evidence.Enable(true);
                         Require(!Field<bool>(main, "monitoring"), "changing settings cannot restart paused monitoring");
                         Field<Button>(main, "toggle").PerformClick();
                         ArmSchedule(main, DateTime.UtcNow.AddSeconds(5));
@@ -50,6 +53,9 @@ namespace CodexAutoResume
                             await Task.Delay(2500);
                             Require(Field<ResumeGate>(main, "gate").Attempts == 0, "scheduled time blocks ordinary triangle recovery before the deadline");
                             await Until(() => Field<ResumeGate>(main, "gate").Verified == 1);
+                            await evidence.Pending;
+                            Require(evidence.LastError == null && Directory.GetFiles(Path.Combine(testData, "logs", "capture-evidence"), "*-frame.png").Length > 0, "covered recovery records owned original frames without changing confirmation");
+                            evidence.Enable(false);
                             Require(!Field<ResumeSchedule>(main, "resumeSchedule").Active, "confirmed ordinary recovery consumes the one-shot schedule");
                             var multiple = demo.Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<CheckBox>().Single();
                             multiple.Checked = true; await Task.Delay(3500);
@@ -161,6 +167,10 @@ namespace CodexAutoResume
                 using (var process = System.Diagnostics.Process.GetCurrentProcess())
                 {
                     var target = new Target { Window = fixture.Handle, ProcessId = process.Id, ProcessStart = process.StartTime.ToUniversalTime().Ticks, ProcessPath = process.MainModule.FileName };
+                    editor.Text = "private diagnostic sentinel";
+                    string diagnostic = await DiagnosticStateWorker.ReadAsync(target, System.Threading.CancellationToken.None);
+                    Require(diagnostic.Contains("\"result\":\"observed\"") && diagnostic.Contains("\"diagnosticOnly\":true") && !diagnostic.Contains("private diagnostic sentinel") && editor.Text == "private diagnostic sentinel" && count == 0, "read-only diagnostic helper observes owned controls without returning drafts or performing actions");
+                    editor.Clear();
                     var observed = await ComposerBridge.RunAsync(target, "inspect", null, "继续工作", DateTime.UtcNow.AddSeconds(25), System.Threading.CancellationToken.None);
                     Require(observed.Result == "Observed" && observed.Context != null && observed.Safe && !observed.Running && observed.Empty, "owned UIA helper binds the selected conversation and safe idle editor; stage=" + observed.Stage);
                     var early = await ComposerBridge.RunAsync(target, "submit", observed.Context, "继续工作", DateTime.UtcNow.AddSeconds(25), System.Threading.CancellationToken.None, DateTime.UtcNow.AddHours(1));

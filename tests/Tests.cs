@@ -22,6 +22,7 @@ namespace CodexAutoResume
                 Group("Recognition and false-click protection", () => Recognition(root));
                 Group("Resume gating and input activity", Recovery);
                 Group("Capture evidence and cancellation", Evidence);
+                Group("Recent diagnostic export and bounded evidence", () => CaptureDiagnosticTests.Run(Check));
                 Group("Update integrity and rollback", () => UpdateTests.Run(Check, root));
                 Group("Current-login usage protocol", () => UsageTests.Run(Check));
                 Group("Quota pause safety", Quota);

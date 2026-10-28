@@ -325,12 +325,13 @@ namespace CodexAutoResume
 
             TableLayoutPanel detail = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 2, RowCount = 3 };
             detail.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116)); detail.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 120)); detail.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));
+            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 120)); detail.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 205));
             PictureBox sample = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(35, 35, 35) };
             Label values = new Label { Dock = DockStyle.Fill, Padding = new Padding(8) };
             TextBox statistics = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
             detail.Controls.Add(sample, 0, 0); detail.Controls.Add(values, 1, 0); detail.Controls.Add(statistics, 0, 1); detail.SetColumnSpan(statistics, 2);
-            FlowLayoutPanel tools = new FlowLayoutPanel { Dock = DockStyle.Fill };
+            FlowLayoutPanel tools = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
+            AddDiagnosticExportTools(tools);
             tools.Controls.Add(UiButton("打开演示", delegate { OpenDemo(); })); tools.Controls.Add(UiButton("本机自检", delegate { ShowSelfCheck(); }));
             tools.Controls.Add(UiButton("后台自测", delegate { ShowBackgroundSelfCheck(); })); tools.Controls.Add(UiButton("保存按钮图", delegate { SaveDiagnostic(); })); tools.Controls.Add(UiButton("打开日志", delegate { OpenLogs(); }));
             tools.Controls.Add(UiButton("导出捕获对照", async delegate { await ExportCaptureComparison(); }));
@@ -339,6 +340,7 @@ namespace CodexAutoResume
             refresh.Tick += delegate
             {
                 if (tabs.SelectedTab != diagnostics) return;
+                if (detailedCaptureOption != null && detailedCaptureOption.Checked != Evidence.Enabled) detailedCaptureOption.Checked = Evidence.Enabled;
                 if (preview.Image != null) { Image old = sample.Image; sample.Image = new Bitmap(preview.Image); if (old != null) old.Dispose(); }
                 values.Text = UiText.Diagnostics(scores.Text);
                 statistics.Text = UiText.Diagnostics(activity.Summary(DateTime.UtcNow, monitoring, updating, background.Checked, target == null ? -1 : target.CandidateCount, gate.Attempts, gate.Verified) + Environment.NewLine + "最近系统帧：" + activity.LastContent.ToString("O") + Environment.NewLine + "原生捕获忙：" + sampler.IsBusy + Environment.NewLine + WindowCapture.BorderStatus + (journal.WriteFailed ? Environment.NewLine + "日志暂时无法写入" : ""));
@@ -358,6 +360,7 @@ namespace CodexAutoResume
             settingsWindow.FormClosed += delegate
             {
                 refresh.Stop(); refresh.Dispose(); if (sample.Image != null) sample.Image.Dispose();
+                detailedCaptureOption = null;
                 common.Controls.Remove(background); crop.Controls.Remove(cropSize); settingsPause = null; SavePreferences();
             };
             Controls.Add(settingsWindow); UiText.Apply(settingsWindow); settingsWindow.Show(); settingsWindow.BringToFront(); RefreshUi();

@@ -13,6 +13,7 @@ namespace CodexAutoResume
         {
             if (args.Length == 1 && args[0] == "--composer-worker") return ComposerWorker.Run();
             if (args.Length == 1 && args[0] == "--scope-worker") return ScopeWorker.Run();
+            if (args.Length == 1 && args[0] == "--diagnostic-state-worker") return DiagnosticStateWorker.Run();
             DesktopIdentity.Initialize();
             Native.SetDpi();
             Application.EnableVisualStyles();
@@ -92,7 +93,7 @@ namespace CodexAutoResume
             cropSize.ValueChanged += delegate { if (target != null && !target.Automatic) { generation++; target.CropSize = (int)cropSize.Value; gate.BreakStreak(); } };
             timer.Interval = 3000; timer.Tick += delegate { TickMonitor(); }; timer.Start();
             healthTimer.Interval = 1000; healthTimer.Tick += delegate { HealthTick(); }; healthTimer.Start();
-            journal.Write("diagnostics.log", "startup", "version=" + Portable.Version + "; detail=10sec", DateTime.UtcNow);
+            journal.Write("diagnostics.log", "startup", "version=" + Portable.Version + "; os=" + Environment.OSVersion.VersionString + "; runtime=" + Environment.Version + "; x64=" + Environment.Is64BitProcess + "; utc-offset=" + DateTimeOffset.Now.Offset + "; detail=10sec; raw-images=opt-in; system-frame-time-does-not-prove-business-state=True", DateTime.UtcNow);
             WindowCapture.FrameAvailable += OnCaptureFrame;
             Shown += async delegate
             {
@@ -172,6 +173,7 @@ namespace CodexAutoResume
             questions.Reset(); questionReported = false; nextMonitor = DateTime.MinValue;
             regionChoiceRequested = false; recoveryWindow.Reset(); captureWatchdog.Reset(); activity.ResetSource(); ResetPreview(); lastObservedContent = -1;
             generation++; target = connected; gate = new ResumeGate(); lastBadge = Rectangle.Empty;
+            TraceTargetConnected(connected);
             waitingForChoice = false; monitoring = true; toggle.Text = "暂停监测";
             SetStatus(automatic.Checked ? "已连接窗口，自动点击中；暂时捕获不到也会持续监测" : "已连接窗口，持续观察；勾选允许自动点击即可生效");
         }
@@ -324,7 +326,7 @@ namespace CodexAutoResume
             try
             {
                 WindowFrame frame = forAction ? await sampler.ReadActionAsync(connected.Window) : await sampler.ReadAsync(connected.Window);
-                if (Current(connected, revision)) activity.Background(frame);
+                if (Current(connected, revision)) { activity.Background(frame); TraceAcquisition(connected, frame, forAction); }
                 return frame;
             }
             catch (Exception e)
@@ -332,7 +334,7 @@ namespace CodexAutoResume
                 if (Current(connected, revision))
                 {
                     activity.Errors++; string error = e.GetType().Name + ": " + e.Message; DateTime now = DateTime.UtcNow;
-                    if (error != lastCaptureError || (now - lastCaptureErrorAt).TotalSeconds >= 10) { lastCaptureError = error; lastCaptureErrorAt = now; journal.Write("diagnostics.log", "capture-error", error, now); }
+                    if (error != lastCaptureError || (now - lastCaptureErrorAt).TotalSeconds >= 10) { lastCaptureError = error; lastCaptureErrorAt = now; journal.Write("diagnostics.log", "capture-error", error + "; independent=" + forAction + "; " + DiagnosticContext(connected), now); }
                 }
                 throw;
             }
@@ -340,6 +342,7 @@ namespace CodexAutoResume
         void HealthTick()
         {
             UsagePulse();
+            PulseDiagnosticState();
             TickTimedInstructions();
             TickScope();
             if (resumeSchedule.Active && !resumeSchedule.Allows(DateTime.UtcNow, ScheduleClock, ScheduleTarget, ScheduleZone) && resumeSchedule.Invalid)
@@ -356,7 +359,7 @@ namespace CodexAutoResume
             if (filePulse.Due(now, TimeSpan.FromSeconds(10)))
             {
                 string identity = target == null ? "unbound" : "hwnd=" + target.Window.ToInt64().ToString("X") + "; pid=" + target.ProcessId;
-                journal.Write("diagnostics.log", "heartbeat", summary + "; " + identity + "; last-sample-utc=" + activity.LastSample.ToString("O") + "; last-content-utc=" + activity.LastContent.ToString("O") + "; sessions=" + WindowCapture.SessionStarts + "; pool-refresh=" + WindowCapture.PoolRefreshes + "; native-worker-busy=" + sampler.IsBusy, now);
+                journal.Write("diagnostics.log", "heartbeat", summary + "; version=" + Portable.Version + "; " + identity + "; last-sample-utc=" + activity.LastSample.ToString("O") + "; last-content-utc=" + activity.LastContent.ToString("O") + "; sessions=" + WindowCapture.SessionStarts + "; pool-refresh=" + WindowCapture.PoolRefreshes + "; native-worker-busy=" + sampler.IsBusy + "; raw-images=" + Evidence.Enabled + "; dropped-evidence=" + Evidence.Dropped + "; evidence-error=" + Evidence.LastError + "; " + CaptureEvidence.TargetInfo(target, generation), now);
             }
         }
 
@@ -459,6 +462,7 @@ namespace CodexAutoResume
                     Detection d;
                     using (Bitmap b = frame.Image.Clone(local, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
                     { d = recognizer.Classify(b); UpdatePreview(b, d); previewContentAt = frame.ContentAt; }
+                    TraceDecision(connected, frame, d, crop, "observation");
                     activity.Recognized(d.State); lastObservedContent = frame.ContentSequence; lastObservedState = d.State;
                     if (frame.Source == "independent") journal.Write("diagnostics.log", "capture-probe-result", "state=" + d.State + "; pixels=" + captureWatchdog.LastSignature + "; crop=" + crop + "; sequence=" + frame.ContentSequence, DateTime.UtcNow);
                     Rectangle badge = d.ButtonBounds; badge.Offset(crop.Location);
@@ -488,6 +492,7 @@ namespace CodexAutoResume
                         Rectangle freshLocal = freshCrop; freshLocal.Offset(-fresh.Bounds.X, -fresh.Bounds.Y);
                         Detection again;
                         using (Bitmap b = fresh.Image.Clone(freshLocal, System.Drawing.Imaging.PixelFormat.Format32bppRgb)) again = recognizer.Classify(b);
+                        TraceDecision(connected, fresh, again, freshCrop, "action-preflight");
                         if (again.State != ButtonState.Resume || Math.Abs(again.ButtonBounds.X - d.ButtonBounds.X) > 2 || Math.Abs(again.ButtonBounds.Y - d.ButtonBounds.Y) > 2)
                         { BackgroundWait("后台点击前图标变化，已取消本次点击"); return; }
                         Point center = new Point(freshCrop.Left + again.ButtonBounds.Left + again.ButtonBounds.Width / 2, freshCrop.Top + again.ButtonBounds.Top + again.ButtonBounds.Height / 2);
@@ -596,6 +601,7 @@ namespace CodexAutoResume
         }
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (captureEvidence != null && captureEvidence.Enabled) captureEvidence.Enable(false);
             CancelQuota();
             monitoring = false; generation++;
             if (diagnosticCancellation != null) diagnosticCancellation.Cancel();

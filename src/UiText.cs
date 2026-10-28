@@ -12,6 +12,16 @@ namespace CodexAutoResume
         static readonly ConditionalWeakTable<Control, Binding> bindings = new ConditionalWeakTable<Control, Binding>();
         static readonly Dictionary<string, string> english = new Dictionary<string, string>
         {
+            { "详细诊断（含原始窗口截图）", "Detailed diagnostics (includes window images)" },
+            { "只读 UIA 对照（可能影响目标重绘）", "Read-only UIA comparison (may affect repainting)" },
+            { "仅本机保存，可能包含聊天内容；本次开启最多 1 小时\n截图按 180 组 / 128 MB 滚动，文本可复制，诊断包包含近期可用截图", "Saved locally; may include chats; enabled for up to 1 hour\nRolling limit: 180 sets / 128 MB; export includes available recent images" },
+            { "复制近 30 分钟日志", "Copy last 30 minutes of logs" },
+            { "导出近 30 分钟诊断包", "Export last 30 minutes of diagnostics" },
+            { "已复制近 30 分钟文本日志，不含截图", "Copied the last 30 minutes of text logs (no images)" },
+            { "诊断日志", "Diagnostic logs" },
+            { "复制失败，请使用导出诊断包", "Copy failed; try exporting diagnostics" },
+            { "诊断包已导出；分享前请检查截图中的聊天内容", "Diagnostics exported; review chat content in images before sharing" },
+            { "导出失败，原文件已保留", "Export failed; the original file was retained" },
             { "返回监测", "Back" },
             { "暂停监测", "Pause" },
             { "恢复记录", "Recoveries" },
