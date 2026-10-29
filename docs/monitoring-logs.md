@@ -79,3 +79,9 @@
 可选 UIA 诊断新增 `composer`：编辑器及聊天 RuntimeId 摘要、祖先链、支持模式和局部动作归属；外围计数明确标注 OutsideThreadContent，并排除标题栏。修复旧诊断跳过 thread-scroll-container 因而漏掉 composer 的问题。
 
 开启详细诊断后，非最小化目标约每 15 秒保存 `control-image-comparison` 原始窗口帧与语义状态，标注 comparison-only；不用于动作授权。最小化时保留接口日志，不能保证存在可用窗口图。复制/导出仍为近 30 分钟，原有单次 1 小时/180 组/128 MB 和隐私边界不变。
+
+## 1.1.21：更新交接诊断
+
+更新助手在 `updates/<任务ID>/outcome.json` 记录阶段、异常类型/原生错误码、回退异常及旧/新/备份字节校验，failure.txt 保留完整详情。简要 `update-result` 进入 diagnostics.log，可随近 30 分钟复制/导出；不打包整个更新目录或任务参数。失败提示重新核对实际 EXE，不以通用“已恢复”文案代替结果验证。失败任务继续保留供排查，不自动上传。
+
+旧版助手没有这些新增记录。旧版本再次自动升级失败时，先关闭 CAR 并手动替换新 EXE 一次；无需删除设置或诊断目录。

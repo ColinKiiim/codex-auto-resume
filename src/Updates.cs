@@ -133,7 +133,7 @@ namespace CodexAutoResume
         public ResumeMemory Resume { get; set; }
     }
 
-    internal static class Updates
+    internal static partial class Updates
     {
         internal const string Repository = "ColinKiiim/codex-auto-resume";
         internal const string LatestUrl = "https://api.github.com/repos/" + Repository + "/releases/latest";
@@ -313,15 +313,32 @@ namespace CodexAutoResume
                 using (FileStream input = File.OpenRead(candidate))
                 using (FileStream output = new FileStream(job.Staged, FileMode.CreateNew, FileAccess.Write, FileShare.None)) input.CopyTo(output);
                 JsonFile.Write(Path.Combine(directory, "job.json"), job);
-                File.Copy(Executable, Path.Combine(directory, "updater.exe"));
+                // Use the already verified candidate's helper implementation,
+                // so future releases can carry their own updater fixes.
+                File.Copy(candidate, Path.Combine(directory, "updater.exe"));
                 return job;
             }
             catch { DeleteFile(job.Staged); throw; }
         }
         internal static Process StartHelper(UpdateJob job)
         {
-            return Process.Start(new ProcessStartInfo(Path.Combine(job.Directory, "updater.exe"), "--apply-update " + Quote(Path.Combine(job.Directory, "job.json")))
+            string ready = Path.Combine(job.Directory, "helper-ready");
+            if (File.Exists(ready)) File.Delete(ready);
+            Process helper = Process.Start(new ProcessStartInfo(Path.Combine(job.Directory, "updater.exe"), "--apply-update " + Quote(Path.Combine(job.Directory, "job.json")))
                 { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = job.Directory });
+            if (helper == null) throw new IOException("更新助手未能启动");
+            try
+            {
+                DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+                while (DateTime.UtcNow < deadline)
+                {
+                    if (File.Exists(ready) && JsonFile.Read<string>(ready) == helper.Id + ":" + job.NewHash) return helper;
+                    if (helper.HasExited) throw new IOException("更新助手启动失败，原程序保持运行");
+                    Thread.Sleep(50);
+                }
+                throw new IOException("更新助手未确认就绪，原程序保持运行");
+            }
+            catch { try { if (!helper.HasExited) { helper.Kill(); helper.WaitForExit(5000); } } catch { } helper.Dispose(); throw; }
         }
         internal static string Quote(string path)
         {
@@ -354,27 +371,36 @@ namespace CodexAutoResume
         }
         internal static int Apply(string path)
         {
-            UpdateJob job = null; bool installed = false; Process child = null;
+            UpdateJob job = null; bool installed = false; Process child = null; string stage = "load-job";
             try
             {
                 job = LoadJob(path);
+                stage = "verify-helper";
                 if (!String.Equals(Executable, Path.Combine(job.Directory, "updater.exe"), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("更新助手位置无效");
-                try
-                {
-                    using (Process parent = Process.GetProcessById(job.ParentId))
-                    {
-                        if (parent.StartTime.ToUniversalTime().Ticks != job.ParentStart || !String.Equals(parent.MainModule.FileName, job.Destination, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("待更新进程不匹配");
-                        if (!parent.WaitForExit(30000)) throw new IOException("程序未及时退出，已取消替换");
-                    }
-                }
-                catch (ArgumentException) { /* Parent already exited. */ }
-                Install(job); installed = true;
+                if (Hash(Executable) != job.NewHash || Portable.Version != job.Version) throw new InvalidDataException("更新助手文件或版本不匹配");
+                stage = "handoff-preflight";
+                ValidateBinary(job.Staged, job.NewHash, job.Version);
+                if (File.Exists(job.Backup) || !Matches(job.Destination, job.OldHash)) throw new IOException("更新前 EXE 或备份路径已变化，原程序保持运行");
+                stage = "wait-parent";
+                UpdateParent.Wait(job, 30000, delegate { JsonFile.Write(Path.Combine(job.Directory, "helper-ready"), Process.GetCurrentProcess().Id + ":" + job.NewHash); });
+                stage = "replace"; Install(job); installed = true;
+                stage = "start-new";
                 child = Process.Start(new ProcessStartInfo(job.Destination, "--updated " + Quote(path)) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(job.Destination) });
+                if (child == null) throw new IOException("新版未能启动");
+                stage = "await-new-ready";
                 DateTime deadline = DateTime.UtcNow.AddSeconds(25);
                 while (DateTime.UtcNow < deadline)
                 {
                     if (File.Exists(Path.Combine(job.Directory, "ready")))
-                    { DeleteFile(job.Backup); DeleteFile(Path.Combine(job.Directory, "candidate.exe")); JsonFile.Write(Path.Combine(job.Directory, "result.json"), "success"); return 0; }
+                    {
+                        if (!Matches(job.Destination, job.NewHash)) throw new IOException("启动确认后 EXE 已变化，保留备份");
+                        DeleteFile(job.Backup); DeleteFile(Path.Combine(job.Directory, "candidate.exe"));
+                        RecordOutcome(job, "complete", null, null, false);
+                        // Bookkeeping failure after a verified startup must not
+                        // kill the working new app after its backup was removed.
+                        try { JsonFile.Write(Path.Combine(job.Directory, "result.json"), "success"); } catch { }
+                        return 0;
+                    }
                     if (child.HasExited) break;
                     Thread.Sleep(100);
                 }
@@ -384,25 +410,27 @@ namespace CodexAutoResume
             {
                 if (job != null)
                 {
+                    Exception recoveryError = null; bool restored = false;
                     try
                     {
                         if (installed)
                         {
-                            if (child != null && !child.HasExited) { child.Kill(); child.WaitForExit(10000); }
-                            RollBack(job);
+                            if (child != null && !child.HasExited) { child.Kill(); if (!child.WaitForExit(10000)) throw new IOException("新版进程未退出，保留备份"); }
+                            RollBack(job); restored = true;
                         }
-                        File.WriteAllText(Path.Combine(job.Directory, "failure.txt"), error.Message, Encoding.UTF8);
-                        if (installed || ParentGone(job)) Process.Start(new ProcessStartInfo(job.Destination, "--update-failed " + Quote(path)) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(job.Destination) });
                     }
-                    catch (Exception recovery) { File.WriteAllText(Path.Combine(job.Directory, "failure.txt"), error.Message + Environment.NewLine + recovery.Message, Encoding.UTF8); }
+                    catch (Exception recovery) { recoveryError = recovery; }
+                    RecordOutcome(job, stage, error, recoveryError, restored);
+                    // Never relaunch unknown/new bytes after a failed rollback.
+                    if (Matches(job.Destination, job.OldHash) && (installed || UpdateParent.Gone(job)))
+                        try { Process.Start(new ProcessStartInfo(job.Destination, "--update-failed " + Quote(path)) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(job.Destination) }); }
+                        catch (Exception launch) { RecordOutcome(job, stage, error, launch, restored); }
                     DeleteFile(job.Staged);
                 }
                 return 1;
             }
             finally { if (child != null) child.Dispose(); }
         }
-        static bool ParentGone(UpdateJob job)
-        { try { using (Process process = Process.GetProcessById(job.ParentId)) return process.StartTime.ToUniversalTime().Ticks != job.ParentStart; } catch (ArgumentException) { return true; } }
         internal static void DeleteFile(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
         internal static void CleanOldJobs()
         {
@@ -414,7 +442,13 @@ namespace CodexAutoResume
                 {
                     if (!Regex.IsMatch(Path.GetFileName(directory), "^[a-f0-9]{32}$") || System.IO.Directory.GetLastWriteTimeUtc(directory) > DateTime.UtcNow.AddDays(-7)) continue;
                     if (File.Exists(Path.Combine(directory, "failure.txt"))) continue;
-                    foreach (string name in new[] { "candidate.exe", "updater.exe", "job.json", "ready", "result.json" }) DeleteFile(Path.Combine(directory, name));
+                    string outcomePath = Path.Combine(directory, "outcome.json");
+                    if (File.Exists(outcomePath))
+                    {
+                        try { var outcome = JsonFile.Read<UpdateOutcome>(outcomePath); if (outcome == null || outcome.ErrorType != null) continue; }
+                        catch { continue; }
+                    }
+                    foreach (string name in new[] { "candidate.exe", "updater.exe", "job.json", "ready", "helper-ready", "result.json", "outcome.json" }) DeleteFile(Path.Combine(directory, name));
                     if (System.IO.Directory.GetFileSystemEntries(directory).Length == 0) System.IO.Directory.Delete(directory);
                 }
             }

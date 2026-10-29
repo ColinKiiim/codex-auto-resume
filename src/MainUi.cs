@@ -516,8 +516,7 @@ namespace CodexAutoResume
                 else if (startupMode == "--update-failed")
                 {
                     automatic.Checked = false;
-                    string failure = Path.Combine(job.Directory, "failure.txt");
-                    UiDialog.Show(this, "更新未完成，已保留或恢复原版本。\n" + (File.Exists(failure) ? File.ReadAllText(failure) : "请稍后重试。"), "更新结果");
+                    UiDialog.Show(this, Updates.FailureSummary(job) + "\n" + Updates.FailureDetail(job), "更新结果");
                 }
             }
             catch (Exception e) { automatic.Checked = false; journal.Write("diagnostics.log", "update-startup", e.Message, DateTime.UtcNow); }

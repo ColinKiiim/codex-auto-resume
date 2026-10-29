@@ -3,6 +3,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Diagnostics;
 using System.Web.Script.Serialization;
 
 namespace CodexAutoResume
@@ -10,6 +11,7 @@ namespace CodexAutoResume
     internal static class UpdateTests
     {
         static bool Rejects(Action action) { try { action(); return false; } catch { return true; } }
+        static bool RejectsWith<T>(Action action) where T : Exception { try { action(); return false; } catch (Exception error) { return error is T; } }
         internal static void Run(Action<bool, string> check, string root)
         {
             string version = "1.1.99", tag = "v" + version, asset = "CodexAutoResume-" + tag + "-windows-x64.exe";
@@ -32,6 +34,15 @@ namespace CodexAutoResume
             using (MemoryStream input = new MemoryStream(new byte[100]))
             using (MemoryStream output = new MemoryStream())
                 check(Rejects(delegate { Updates.CopyBounded(input, output, 1000, new CancellationToken(true)).GetAwaiter().GetResult(); }), "cancelled download cannot produce executable");
+            using (var parent = Process.GetCurrentProcess())
+            {
+                var identity = new UpdateJob { ParentId = parent.Id, ParentStart = parent.StartTime.ToUniversalTime().Ticks, Destination = Updates.Executable };
+                check(RejectsWith<IOException>(delegate { UpdateParent.Wait(identity, 0); }), "verified live parent cannot be treated as exited");
+                identity.ParentStart++;
+                check(RejectsWith<InvalidDataException>(delegate { UpdateParent.Wait(identity, 0); }), "same PID with a different creation time cannot authorize replacement");
+                identity.ParentStart--; identity.Destination += ".other.exe";
+                check(RejectsWith<InvalidDataException>(delegate { UpdateParent.Wait(identity, 0); }), "same process with a mismatched executable path is rejected");
+            }
             string directory = Path.Combine(Path.GetTempPath(), "CodexAutoResume-update-unit-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
             try
             {
@@ -40,13 +51,16 @@ namespace CodexAutoResume
                 File.WriteAllText(original, "old executable fixture"); File.Copy(built, staged);
                 UpdateJob job = new UpdateJob { Destination = original, Staged = staged, Backup = backup, OldHash = Updates.Hash(original), NewHash = Updates.Hash(staged), Version = Portable.Version };
                 string oldHash = job.OldHash;
+                check(Updates.FailureSummary(job).Contains("已核验"), "failure summary verifies retained old EXE bytes");
                 check(Rejects(delegate { Updates.ValidateBinary(staged, hash, Portable.Version); }), "corrupt checksum rejected before execution");
                 check(Rejects(delegate { Updates.ValidateBinary(staged, job.NewHash, "1.1.0"); }), "EXE metadata must match offered version");
                 Updates.Install(job);
+                check(Updates.FailureSummary(job).Contains("仍为新版本"), "new bytes remaining after failure cannot be described as restored");
                 check(Updates.Hash(original) == job.NewHash && Updates.Hash(backup) == oldHash, "atomic installation keeps exact old EXE backup");
                 Updates.RollBack(job);
                 check(Updates.Hash(original) == oldHash && !File.Exists(backup), "rollback restores exact original executable");
                 File.Copy(built, staged); File.AppendAllText(original, "external edit");
+                check(Updates.FailureSummary(job).Contains("无法核验"), "unknown destination bytes cannot be described as retained or restored");
                 check(Rejects(delegate { Updates.Install(job); }) && File.ReadAllText(original).Contains("external edit"), "concurrent external change prevents replacement");
                 check(Rejects(delegate { Updates.LoadJob(Path.Combine(directory, "job.json")); }), "helper rejects jobs outside its owned update root");
             }
