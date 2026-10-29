@@ -195,21 +195,23 @@ namespace CodexAutoResume
 
         void AddQuotaSettings(FlowLayoutPanel panel)
         {
-            panel.Controls.Add(UiLabel("额度自动暂停与恢复"));
+            panel.Controls.Add(UiStyle.Section("额度自动暂停与恢复"));
             var enabled = new CheckBox { Name = "QuotaControl", Text = "启用额度控制（需开启自动恢复）", AutoSize = true, Checked = preferences.QuotaControl };
-            var five = new CheckBox { Text = "5h", AutoSize = true, Checked = preferences.QuotaFiveHour };
+            var five = new CheckBox { Text = "5 小时额度", AutoSize = true, Checked = preferences.QuotaFiveHour };
             var week = new CheckBox { Text = "周额度", AutoSize = true, Checked = preferences.QuotaWeekly };
             var fiveThreshold = new NumericUpDown { Name = "FiveHourThreshold", Minimum = 0, Maximum = 99, Value = preferences.FiveHourThreshold, Width = 64 };
             var weekThreshold = new NumericUpDown { Name = "WeeklyThreshold", Minimum = 0, Maximum = 99, Value = preferences.WeeklyThreshold, Width = 64 };
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            row.Controls.Add(five); row.Controls.Add(UiLabel("剩余 ≤")); row.Controls.Add(fiveThreshold); row.Controls.Add(UiLabel("% 时暂停"));
-            var weekRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            weekRow.Controls.Add(week); weekRow.Controls.Add(UiLabel("剩余 ≤")); weekRow.Controls.Add(weekThreshold); weekRow.Controls.Add(UiLabel("% 时暂停"));
-            var prompt = new TextBox { Name = "ContinuePrompt", Multiline = true, AcceptsReturn = true, MaxLength = 2048, Width = 480, Height = 62, Text = preferences.ContinuePrompt, ScrollBars = ScrollBars.Vertical };
+            var row = new ThresholdRow(five, fiveThreshold);
+            var weekRow = new ThresholdRow(week, weekThreshold);
+            var prompt = new EditorTextBox { Name = "ContinuePrompt", Multiline = true, AcceptsReturn = true, MaxLength = 2048, Width = 480, Height = 86, Text = preferences.ContinuePrompt, ScrollBars = ScrollBars.Vertical };
+            quotaPromptEditor = prompt;
             panel.Controls.Add(enabled); panel.Controls.Add(row); panel.Controls.Add(weekRow);
             panel.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(490, 0), ForeColor = Color.DimGray,
                 Text = "任一所选额度不足即暂停，全部恢复才继续\n等待时画面每分钟采样，额度正常每 10 秒查询\n后台输入不可用时允许切回 Codex 输入；已有草稿时等待" });
-            panel.Controls.Add(UiLabel("无暂停三角形时补发的继续指令")); panel.Controls.Add(prompt);
+            panel.Controls.Add(UiStyle.Section("无暂停三角形时补发的继续指令")); panel.Controls.Add(prompt);
+            panel.Controls.Add(UiButton("保存指令", delegate { SaveQuotaPrompt(); }));
+            quotaPromptFeedback = UiStyle.Help(""); panel.Controls.Add(quotaPromptFeedback);
+            Action enableFields = delegate { row.Enabled = weekRow.Enabled = prompt.Enabled = enabled.Checked; fiveThreshold.Enabled = enabled.Checked && five.Checked; weekThreshold.Enabled = enabled.Checked && week.Checked; };
             EventHandler changed = delegate {
                 bool owned = quotaPause.Owned;
                 CancelQuota(); preferences.QuotaFiveHour = five.Checked; preferences.QuotaWeekly = week.Checked;
@@ -217,14 +219,11 @@ namespace CodexAutoResume
                 preferences.QuotaWeeklyThreshold = (int)weekThreshold.Value;
                 preferences.QuotaControl = enabled.Checked && (five.Checked || week.Checked);
                 if (owned) automatic.Checked = false;
-                nextMonitor = DateTime.MinValue; SavePreferences();
+                nextMonitor = DateTime.MinValue; SavePreferences(); enableFields();
             };
             enabled.CheckedChanged += changed; five.CheckedChanged += changed; week.CheckedChanged += changed; fiveThreshold.ValueChanged += changed; weekThreshold.ValueChanged += changed;
-            prompt.TextChanged += delegate {
-                CancelQuota(); if (automatic.Checked) automatic.Checked = false;
-                string text = prompt.Text.Replace("\r\n", "\n");
-                if (ComposerRequest.ValidPrompt(text)) { preferences.ContinuePrompt = text; SavePreferences(); }
-            };
+            prompt.TextChanged += delegate { UiText.Set(quotaPromptFeedback, prompt.Text.Replace("\r\n", "\n") == preferences.ContinuePrompt ? "" : "指令有未保存的修改"); };
+            enableFields();
         }
     }
 }

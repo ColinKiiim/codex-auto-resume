@@ -45,6 +45,7 @@ namespace CodexAutoResume
                         var evidence = (CaptureEvidence)main.GetType().GetProperty("Evidence", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(main, null);
                         evidence.Enable(true);
                         Require(!Field<bool>(main, "monitoring"), "changing settings cannot restart paused monitoring");
+                        SettingsBoundary(main);
                         Field<Button>(main, "toggle").PerformClick();
                         ArmSchedule(main, DateTime.UtcNow.AddSeconds(5));
                         using (var cover = new Form { Bounds = Rectangle.Inflate(demo.Bounds, 20, 20), BackColor = Color.Magenta, TopMost = true, StartPosition = FormStartPosition.Manual })
@@ -112,6 +113,29 @@ namespace CodexAutoResume
             var target = Field<Target>(main, "target");
             Field<ResumeSchedule>(main, "resumeSchedule").Arm(due, target.Window + ":" + target.ProcessId + ":" + target.ProcessStart,
                 DateTime.UtcNow, (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency, TimeZoneInfo.Local.Id);
+        }
+        static void SettingsBoundary(MainForm main)
+        {
+            var preferences = Field<UserPreferences>(main, "preferences");
+            var automatic = Field<CheckBox>(main, "automatic");
+            ArmSchedule(main, DateTime.UtcNow.AddHours(1));
+            Call(main, "ShowSettings");
+            Require(automatic.Checked && Field<ResumeSchedule>(main, "resumeSchedule").Active && !Field<bool>(main, "monitoring"), "constructing settings preserves paused monitoring, automatic execution and the pending schedule");
+            var picker = Field<DateTimePicker>(main, "schedulePicker");
+            Require(picker.Value > DateTime.Now.AddMinutes(55), "initial localization does not reset a date picker to the current time");
+            picker.Value = DateTime.Now.AddHours(2); DateTime selectedTime = picker.Value;
+            var pause = Field<QuotaPause>(main, "quotaPause"); pause.Phase = QuotaPhase.Waiting;
+            string previous = preferences.ContinuePrompt;
+            Field<TextBox>(main, "quotaPromptEditor").Text = "保存前不得改变任务";
+            Call(main, "RefreshSettingsLanguage");
+            Require(picker.Value == selectedTime, "settings localization preserves the selected recovery time");
+            Require(preferences.ContinuePrompt == previous && automatic.Checked && pause.Phase == QuotaPhase.Waiting && Field<ResumeSchedule>(main, "resumeSchedule").Active, "editing or relaying out an unsaved instruction does not cancel or commit a live transaction");
+            Call(main, "SaveQuotaPrompt");
+            Require(preferences.ContinuePrompt == "保存前不得改变任务" && !automatic.Checked && !pause.Owned && !Field<ResumeSchedule>(main, "resumeSchedule").Active, "explicit instruction save commits once and retains cancellation and execution-disabling safeguards");
+            preferences.ContinuePrompt = previous;
+            Field<TextBox>(main, "quotaPromptEditor").Text = previous;
+            Field<Panel>(main, "settingsWindow").Visible = false;
+            automatic.Checked = true;
         }
         static async Task TimedQueue(MainForm main)
         {

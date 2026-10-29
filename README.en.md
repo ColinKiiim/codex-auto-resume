@@ -1,16 +1,16 @@
-﻿# CodexAutoResume — Auto-resume paused Codex desktop tasks
+# CodexAutoResume — Auto-resume paused Codex desktop tasks
 
 [Download latest](https://github.com/ColinKiiim/codex-auto-resume/releases/latest) · [All releases](https://github.com/ColinKiiim/codex-auto-resume/releases) · [Report an issue](https://github.com/ColinKiiim/codex-auto-resume/issues/new/choose)
 
 [简体中文](README.md) · [Troubleshooting](docs/troubleshooting.en.md) · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
-**Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. Compact footer bars also show the current login's remaining quota and reset times. One EXE, no API key.
+**Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. The usage section also shows the current login's remaining quota and reset times. One EXE, no API key.
 
-> Version 1.1.23 fixes background binding with embedded browsers, compact layouts and collapsed sidebars, removes unrelated recovery gates, adds the latest capacity error’s bottom Retry action, and repairs timestamp/text clipping across the UI. Ordinary recovery never checks drafts. See the [version notes](docs/releases/v1.1.23.md).
+> Version 1.1.24 reorganizes monitoring and six settings categories, keeps usage above recent progress, and checks for updates hourly. It also preserves selected schedule times during localization and saves continuation edits explicitly. See the [version notes](docs/releases/v1.1.24.md).
 
 ## Pause on low quota, continue after recovery
 
-Compact footer bars read the current local login about every 10 seconds. Hover for precise local 5h / weekly reset times. No account import or token manager is required. Quota control is in Settings, off by default, and also requires Auto-resume in the main window.
+The usage section reads the current local login about every 10 seconds. Hover for precise local 5h / weekly reset times. No account import or token manager is required. Quota control is in Settings, off by default, and also requires Auto-resume in the main window.
 
 Select 5h, weekly, or both and set a separate remaining-percentage threshold for each (both default to 10%). Any selected quota at or below the threshold triggers an attempt to verify the conversation and pause the running square. While waiting, screen sampling drops to once a minute; quota queries remain independent. All selected quotas must rise above their own thresholds before continuing. A freshly verified resume triangle in the original conversation takes priority. If it disappears, the helper may submit a customizable continuation to that verified conversation's empty editor. The default Chinese text asks Codex to continue from the interruption point.
 
@@ -18,11 +18,11 @@ Input first tries an existing, ownership-verified local debugging endpoint, with
 
 **An early reset for all users is a target scenario.** If actual quota recovers before the previous countdown, CAR uses that fresh quota instead of waiting for the old reset time. This includes the Tibo-wide-reset scenario requested by the user. Polling normally takes about 10 seconds; network delays, failure backoff, input protection and UI availability can delay continuation. An earlier request reduces idle time, but the server determines when the weekly window starts. CAR cannot control that timer or promise instant continuation.
 
-Changing quota settings or continuation text cancels the old transaction; if CAR already paused the task, changing settings also disables Auto-resume to prevent an unexpected continuation. A detected manual continuation cancels that pause cycle until quota recovers and rearms it. Pausing monitoring, changing targets or restarting never replays an old continuation. Outstanding real-app integration and device checks remain in [TODO](TODO.md).
+Changing quota settings or saving a new continuation instruction cancels the old transaction; if CAR already paused the task, changing settings also disables Auto-resume to prevent an unexpected continuation. Typing unsaved instruction edits does not change execution; explicitly saving a new instruction also disables Auto-resume. A detected manual continuation cancels that pause cycle until quota recovers and rearms it. Pausing monitoring, changing targets or restarting never replays an old continuation. Outstanding real-app integration and device checks remain in [TODO](TODO.md).
 
 ## Recover after a specified time
 
-Choose a full local date and time in Settings → General → Scheduled recovery, set the one-time recovery, and enable Auto-resume. Both ordinary triangle recovery and quota recovery wait until that time. Enabled quota periods must also exceed their individual thresholds, the target must be verified, and input must remain idle for 1.5 seconds. Scheduling can also be used without quota control.
+Choose a full local date and time in Settings → Schedules and tasks → Scheduled recovery, set the one-time recovery, and enable Auto-resume. Both ordinary triangle recovery and quota recovery wait until that time. Enabled quota periods must also exceed their individual thresholds, the target must be verified, and input must remain idle for 1.5 seconds. Scheduling can also be used without quota control.
 
 A schedule does not pause a running task or create messages. Confirmed recovery consumes it. Stopping monitoring, disabling Auto-resume, changing targets or exiting cancels it. Replacing or canceling an active plan disables Auto-resume until you enable it again. Plans are never replayed after restart; updates with an active plan return to observation mode. Sleep does not wake the PC; after waking, fresh checks precede any action. Clock or timezone changes cancel the plan for review.
 
@@ -43,7 +43,7 @@ The default continuation prompt does not overwrite saved task prompts. Local `ti
 | What you see | What to do |
 |---|---|
 | Paused task with a right-pointing resume triangle | Enable automatic clicking to resume when the button is recognized |
-| Usage limit or a reset time | Check footer bars and precise reset times; opt-in quota control is available, but clicks cannot add quota |
+| Usage limit or a reset time | Check the usage section and precise reset times; opt-in quota control is available, but clicks cannot add quota |
 | Persistent service errors without a resume button | Follow the client message and check service status |
 | A question, permission request, or choice | Review it yourself; this utility does not answer or approve |
 | Running square, send arrow, or voice waveform | Ordinary auto-resume observes; quota actions require this cycle's verified original conversation |
@@ -78,9 +78,9 @@ Background mode first binds the original window, chat, page and unique composer,
 
 ## Monitoring and privacy
 
-The compact window shows monitoring status, a tightly cropped real preview, and scrollable timestamped progress for the current session. New entries follow the bottom until you scroll back; reading older entries keeps your position. A short progress entry is refreshed every ten seconds; repeated progress is not added to the full activity history. Activity history contains significant events; diagnostics record sampling and capture activity every 10 seconds, with rotation. Open logs from **Settings → Diagnostics**, or visit `%LOCALAPPDATA%\CodexAutoResume\logs`.
+The monitoring page keeps status, Auto-resume and remaining usage visible above recent progress. Settings has six categories; each long page scrolls independently while navigation and Pause stay visible. Saved instruction changes retain the existing cancellation safeguards; typing unsaved edits does not alter execution. New entries follow the bottom until you scroll back; reading older entries keeps your position. A short progress entry is refreshed every ten seconds; repeated progress is not added to the full activity history. Activity history contains significant events; diagnostics record sampling and capture activity every 10 seconds, with rotation. Open logs from **Settings → Diagnostics**, or visit `%LOCALAPPDATA%\CodexAutoResume\logs`.
 
-Updates are checked on startup and every six hours. A new stable release prompts for confirmation, then downloads, verifies, replaces, and restarts the EXE. Failed replacement or startup keeps or restores the old version. Update checks can be disabled in Settings. Existing versions without this feature need one manual upgrade.
+Updates are checked on startup and every hour. A new stable release prompts for confirmation, then downloads, verifies, replaces, and restarts the EXE. Failed replacement or startup keeps or restores the old version. Update checks can be disabled in Settings. Existing versions without this feature need one manual upgrade.
 
 Recognition and OCR run locally, with no automatic uploads. Opt-in detailed diagnostics can retain full-window images containing private chat content for up to one hour, bounded to 180 sets / 128 MB. Review diagnostic exports before sharing; ordinary text logs use identity hashes instead of chat text.
 
@@ -96,7 +96,7 @@ The current implementation targets the Codex desktop window on Windows x64. It i
 
 ### Can it show remaining Codex usage?
 
-The footer normally refreshes about every 10 seconds. Hover for precise reset times, or click for account/source details and refresh. It reuses the target installation's bundled App Server without importing accounts or managing tokens. Missing quota leaves ordinary auto-resume available when quota control is off; enabling quota control requires valid usage before actions. The user confirmed quota reading on a second physical PC; custom login environments still need their own checks. See the [usage guide](docs/user-guide.md).
+The usage section normally refreshes about every 10 seconds. Hover for precise reset times, or click for account/source details and refresh. It reuses the target installation's bundled App Server without importing accounts or managing tokens. Missing quota leaves ordinary auto-resume available when quota control is off; enabling quota control requires valid usage before actions. The user confirmed quota reading on a second physical PC; custom login environments still need their own checks. See the [usage guide](docs/user-guide.md).
 
 ### Does it send messages or approve requests?
 

@@ -6,6 +6,24 @@ namespace CodexAutoResume
 {
     internal static class WindowUi
     {
+        internal static void FitToWorkArea(Form window)
+        {
+            Rectangle area = Screen.FromControl(window).WorkingArea;
+            window.MinimumSize = new Size(Math.Min(window.MinimumSize.Width, area.Width), Math.Min(window.MinimumSize.Height, area.Height));
+            window.Size = new Size(Math.Min(window.Width, area.Width), Math.Min(window.Height, area.Height));
+            window.Location = new Point(Math.Max(area.Left, Math.Min(window.Left, area.Right - window.Width)), Math.Max(area.Top, Math.Min(window.Top, area.Bottom - window.Height)));
+        }
+        internal static void TextDetails(Form owner, string title, string text)
+        {
+            using (var dialog = new Form { Text = title, Font = owner.Font, Icon = owner.Icon, AutoScaleMode = AutoScaleMode.Dpi, AutoScaleDimensions = new SizeF(96, 96), ClientSize = new Size(640, 400), MinimumSize = new Size(360, 260), BackColor = UiStyle.Background })
+            {
+                var body = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, WordWrap = true, Dock = DockStyle.Fill, Text = text, BorderStyle = BorderStyle.None, BackColor = SystemColors.Window, Margin = new Padding(16) };
+                var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(12) };
+                var close = new Button { Text = UiText.Get("关闭"), AutoSize = true, MinimumSize = new Size(80, 32), DialogResult = DialogResult.Cancel };
+                actions.Controls.Add(close); dialog.Controls.Add(body); dialog.Controls.Add(actions); dialog.CancelButton = close;
+                dialog.Shown += delegate { body.Select(0, 0); close.Focus(); }; Modal(dialog, owner);
+            }
+        }
         internal static void Center(Form dialog, Form owner)
         {
             if (owner == null || owner.IsDisposed) return;
@@ -34,7 +52,7 @@ namespace CodexAutoResume
             dialog.Shown += delegate { Center(dialog, owner); };
             return dialog.ShowDialog(owner);
         }
-        internal static void ScrollContent(TabPage page, FlowLayoutPanel content)
+        internal static void ScrollContent(Control page, FlowLayoutPanel content)
         {
             var viewport = new Panel { Name = "SettingsViewport", Dock = DockStyle.Fill, AutoScroll = true };
             content.Dock = DockStyle.Top;
@@ -48,15 +66,17 @@ namespace CodexAutoResume
                 layingOut = true;
                 try
                 {
-                    // Reserve the scrollbar width up front, avoiding a width /
-                    // wrapping oscillation when the vertical scrollbar appears.
-                    int width = Math.Max(100, viewport.ClientSize.Width - SystemInformation.VerticalScrollBarWidth);
+                    // ClientSize already excludes a visible native scrollbar.
+                    int width = Math.Max(100, viewport.ClientSize.Width);
                     content.MinimumSize = new Size(width, 0); content.MaximumSize = new Size(width, 0);
                     int usable = Math.Max(60, width - content.Padding.Horizontal - 8);
                     foreach (Control child in content.Controls)
                     {
                         FitText(child, usable);
                         if (child is TextBox) child.Width = usable;
+                        var threshold = child as ThresholdRow;
+                        if (threshold != null) { threshold.Fit(usable); continue; }
+                        if (child is Panel && !(child is FlowLayoutPanel)) child.Width = usable;
                         if (child is DateTimePicker || child is ListBox || child is ComboBox && child.Name == "ScopeChoices") child.Width = usable;
                         var row = child as FlowLayoutPanel;
                         if (row != null) { row.MaximumSize = new Size(usable, 0); row.WrapContents = true; FitChildren(row, usable); }
@@ -68,7 +88,7 @@ namespace CodexAutoResume
             viewport.Controls.Add(content); page.Controls.Add(viewport);
             ObserveText(content, fit);
             viewport.SizeChanged += delegate { fit(); };
-            content.ControlAdded += delegate { fit(); };
+            content.ControlAdded += delegate(object sender, ControlEventArgs e) { e.Control.TextChanged += delegate { fit(); }; e.Control.FontChanged += delegate { fit(); }; ObserveText(e.Control, fit); fit(); };
             page.VisibleChanged += delegate { fit(); };
             content.FontChanged += delegate { fit(); };
             fit();
@@ -94,6 +114,7 @@ namespace CodexAutoResume
         static void FitText(Control child, int width)
         {
             if (child is Label) child.MaximumSize = new Size(width, 0);
+            if (child is Button) child.MinimumSize = new Size(Math.Min(width, Math.Max(76, child.PreferredSize.Width)), Math.Max(32, child.Font.Height + 12));
             var option = child as CheckBox;
             if (option == null) return;
             // Native checkbox AutoSize measures a single line even with MaximumSize.

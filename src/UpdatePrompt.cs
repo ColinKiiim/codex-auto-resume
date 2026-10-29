@@ -64,12 +64,12 @@ namespace CodexAutoResume
             Text = en ? "Update available" : "发现新版本"; Icon = DesktopIdentity.LoadIcon();
             Font = new Font("Microsoft YaHei UI", 10); AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(580, 520); MinimumSize = new Size(540, 430); StartPosition = FormStartPosition.CenterParent;
-            MinimizeBox = false; MaximizeBox = false; BackColor = Color.FromArgb(248, 249, 251);
+            MinimizeBox = false; MaximizeBox = false; BackColor = UiStyle.Background; Notes.BackColor = SystemColors.Window;
             TableLayoutPanel root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(20) };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-            TableLayoutPanel header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
-            header.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); header.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            TableLayoutPanel header = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 2, Padding = new Padding(0, 0, 0, 12), Margin = Padding.Empty };
+            header.RowStyles.Add(new RowStyle(SizeType.AutoSize)); header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             header.Controls.Add(new Label { Text = (en ? "Version " : "发现新版本 ") + update.Version, Font = new Font(Font.FontFamily, 14, FontStyle.Bold), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty }, 0, 0);
             string date = update.PublishedAt == DateTime.MinValue ? "" : "   ·   " + update.PublishedAt.ToLocalTime().ToString("yyyy-MM-dd");
             header.Controls.Add(new Label { Text = (en ? "Current " : "当前 ") + current + "  →  " + update.Version + date, Dock = DockStyle.Fill, ForeColor = Color.DimGray, Margin = Padding.Empty }, 0, 1);
@@ -87,7 +87,7 @@ namespace CodexAutoResume
             };
             root.Controls.Add(full, 0, 2);
             root.Controls.Add(new Label { Text = en ? "CAR will restart after the update" : "更新完成后将重启 CAR", Dock = DockStyle.Fill, ForeColor = Color.DimGray, Margin = Padding.Empty }, 0, 3);
-            TableLayoutPanel actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
+            TableLayoutPanel actions = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty, Padding = new Padding(0, 8, 0, 0) };
             actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 98)); actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 126));
             LinkLabel skip = new LinkLabel { Name = "SkipUpdate", Text = en ? "Skip this version" : "跳过此版本", AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding.Empty, LinkColor = Color.DimGray };
             skip.LinkClicked += delegate { DialogResult = DialogResult.Ignore; Close(); };
@@ -95,12 +95,27 @@ namespace CodexAutoResume
             Now = new Button { Name = "UpdateNow", Text = en ? "Update now" : "立即更新", Dock = DockStyle.Fill, DialogResult = DialogResult.OK, Margin = new Padding(0, 3, 0, 3), BackColor = Color.FromArgb(30, 105, 210), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             actions.Controls.Add(skip, 0, 0); actions.Controls.Add(Later, 1, 0); actions.Controls.Add(Now, 2, 0); root.Controls.Add(actions, 0, 4);
             Controls.Add(root); AcceptButton = Later; CancelButton = Later;
+            if (SystemInformation.HighContrast) { Now.BackColor = SystemColors.Highlight; Now.ForeColor = SystemColors.HighlightText; full.LinkColor = skip.LinkColor = SystemColors.HotTrack; }
+            foreach (Control child in header.Controls) { child.AutoSize = true; child.Margin = new Padding(0, 4, 0, 4); }
+            full.Margin = new Padding(0, 8, 0, 8);
+            var restart = root.GetControlFromPosition(0, 3) as Label; restart.AutoSize = true; restart.Margin = new Padding(0, 0, 0, 8);
+            Later.AutoSize = Now.AutoSize = true; Later.MinimumSize = Now.MinimumSize = new Size(88, 34);
+            Action fit = delegate {
+                int width = Math.Max(150, root.ClientSize.Width - root.Padding.Horizontal);
+                foreach (Control child in header.Controls) child.MaximumSize = new Size(width, 0);
+                restart.MaximumSize = new Size(width, 0);
+                actions.ColumnStyles[1].Width = Math.Max(98, Later.PreferredSize.Width + 10);
+                actions.ColumnStyles[2].Width = Math.Max(126, Now.PreferredSize.Width);
+            };
+            root.SizeChanged += delegate { fit(); }; FontChanged += delegate { header.GetControlFromPosition(0, 0).Font = new Font(Font.FontFamily, Font.SizeInPoints * 1.4f, FontStyle.Bold); fit(); }; fit();
             Shown += delegate { ActiveControl = Later; Later.Focus(); ResizeNotes(); };
         }
         void AddText(string text, bool bold, Color color)
         {
-            Notes.Controls.Add(new Label { Text = text, AutoSize = true, UseMnemonic = false, ForeColor = color,
-                Font = new Font(Font.FontFamily, Font.SizeInPoints, bold ? FontStyle.Bold : FontStyle.Regular), Margin = new Padding(0, bold ? 8 : 4, 0, 6) });
+            Label label = bold ? new SectionLabel() : new Label();
+            label.Text = text; label.AutoSize = true; label.UseMnemonic = false;
+            label.ForeColor = SystemInformation.HighContrast ? SystemColors.WindowText : color;
+            label.Margin = new Padding(0, bold ? 8 : 4, 0, 6); Notes.Controls.Add(label);
         }
         void ResizeNotes()
         {

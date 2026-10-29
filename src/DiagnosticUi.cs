@@ -59,6 +59,8 @@ namespace CodexAutoResume
         }
         void AddDiagnosticExportTools(FlowLayoutPanel tools)
         {
+            tools.Controls.Add(UiButton("复制近 30 分钟日志", async delegate { await CopyRecentDiagnostics(); }));
+            tools.Controls.Add(UiButton("导出近 30 分钟诊断包", async delegate { await ExportRecentDiagnostics(); }));
             var detail = new CheckBox { Name = "DetailedCapture", Text = "详细诊断（含原始窗口截图）", AutoSize = true, Checked = Evidence.Enabled };
             detailedCaptureOption = detail;
             detail.CheckedChanged += delegate { Evidence.Enable(detail.Checked); nextDiagnosticState = DateTime.MinValue; };
@@ -68,8 +70,8 @@ namespace CodexAutoResume
             tools.Controls.Add(uia);
             tools.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(490, 0), ForeColor = Color.DimGray,
                 Text = "仅本机保存，可能包含聊天内容；本次开启最多 1 小时\n截图按 180 组 / 128 MB 滚动，文本可复制，诊断包包含近期可用截图" });
-            tools.Controls.Add(UiButton("复制近 30 分钟日志", async delegate { await CopyRecentDiagnostics(); }));
-            tools.Controls.Add(UiButton("导出近 30 分钟诊断包", async delegate { await ExportRecentDiagnostics(); }));
+
+
         }
         async Task CopyRecentDiagnostics()
         {

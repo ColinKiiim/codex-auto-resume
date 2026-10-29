@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -12,6 +12,54 @@ namespace CodexAutoResume
         static readonly ConditionalWeakTable<Control, Binding> bindings = new ConditionalWeakTable<Control, Binding>();
         static readonly Dictionary<string, string> english = new Dictionary<string, string>
         {
+            { "监测", "Monitoring" },
+            { "监测与恢复", "Monitoring and recovery" },
+            { "额度", "Usage" },
+            { "定时与任务", "Schedules and tasks" },
+            { "诊断", "Diagnostics" },
+            { "关于与更新", "About and updates" },
+            { "设置分类", "Category" },
+            { "快捷键", "Keyboard shortcuts" },
+            { "启动默认仅观察，确认目标后可在首页开启自动恢复", "Starts in observation mode. Confirm the target, then enable Auto-resume on the monitoring page" },
+            { "F1 使用说明 · F2 本机自检 · F4 后台自测", "F1 Help · F2 Self-check · F4 Background test" },
+            { "连接窗口", "Connect window" },
+            { "暂停或继续监测", "Pause or resume monitoring" },
+            { "紧急停止", "Stop immediately" },
+            { "检测到暂停后，空闲 1.5 秒自动继续", "Resumes after a pause and 1.5 seconds without input" },
+            { "目标详情", "Target details" },
+            { "后台控件状态示意 · 点击查看", "Background control illustration · Click for details" },
+            { "等待可核验的后台接口", "Waiting for a verified background interface" },
+            { "监测方式", "Monitoring mode" },
+            { "展开或收起定位工具", "Show or hide targeting tools" },
+            { "当前额度", "Current usage" },
+            { "额度详情", "Usage details" },
+            { "额度剩余", "Remaining usage" },
+            { "额度剩余 · 旧数据", "Remaining usage · Out of date" },
+            { "查看详情", "Details" },
+            { "5 小时额度", "5-hour usage" },
+            { "保存指令", "Save instruction" },
+            { "请输入有效的继续指令", "Enter a valid continuation instruction" },
+            { "指令有未保存的修改", "Instruction has unsaved edits" },
+            { "指令已保存，请按需要开启自动恢复", "Instruction saved. Enable Auto-resume when ready" },
+            { "继续指令有未保存的修改，是否保存？", "Save the changes to the continuation instruction?" },
+            { "选择“否”放弃修改，选择“取消”继续编辑", "Choose No to discard changes or Cancel to continue editing" },
+            { "未保存的修改", "Unsaved changes" },
+            { "新增任务", "New task" },
+            { "编辑并绑定任务", "Edit and bind task" },
+            { "执行时间", "Scheduled time" },
+            { "任务指令", "Task instruction" },
+            { "保存时核验并绑定当前聊天；每个任务保存自己的指令", "Saving verifies and binds the current chat. Each task keeps its own instruction" },
+            { "保存并绑定当前聊天", "Save and bind current chat" },
+            { "任务有未保存的修改，是否保存并绑定？", "Save changes and bind this task?" },
+            { "当前连接与识别", "Connection and recognition" },
+            { "查看完整诊断状态", "View full diagnostic status" },
+            { "日志与诊断包", "Logs and diagnostics" },
+            { "高级诊断", "Advanced diagnostics" },
+            { "展开或收起诊断工具", "Show or hide diagnostic tools" },
+            { "正在检查更新…", "Checking for updates…" },
+            { "启动后检查，运行中每小时检查一次；没有更新时保持安静", "Checks on startup and every hour; stays quiet when up to date" },
+            { "帮助", "Help" },
+            { "关闭", "Close" },
             { "后台控件状态", "Background control state" },
             { "聊天已变化，请手动核对额度暂停", "Chat changed; check the quota pause manually" },
             { "后台支持遮挡；接口可核验时也支持最小化\n最小化时接口不可用则等待；前台模式需按钮可见", "Background supports covered windows and verified minimized controls\nMinimized targets wait if controls are unavailable; foreground needs a visible button" },
@@ -208,7 +256,7 @@ namespace CodexAutoResume
             { "使用说明", "Help" },
             { "许可证", "License" },
             { "启动默认仅观察，开启自动恢复后才会点击", "Starts in observation mode; enable auto-resume to allow clicks" },
-            { "自动检查每 6 小时一次，没有更新时保持安静", "Checks every 6 hours; stays quiet when up to date" },
+            { "自动检查每小时一次，没有更新时保持安静", "Checks every hour; stays quiet when up to date" },
             { "无法打开日志", "Unable to open logs" },
             { "当前已是最新正式版", "You have the latest stable version" },
             { "发现新版本", "Update available" },
@@ -240,7 +288,7 @@ namespace CodexAutoResume
             { "使用所选区域", "Use selected area" },
             { "暂不选择", "Not now" },
             { "发现多个候选，或原选区域已改变。请选择并确认；确认前不会自动点击", "Choose and confirm a button area before automatic clicks can resume" },
-            { "检测到多个窗口，请选择一个。确认前不会点击；之后可用主窗口的“选择窗口”更换", "Choose a window before clicks can resume; use Change to switch later" },
+            { "检测到多个窗口，请选择一个。确认前不会点击；之后可在设置的高级定位中更换", "Choose a window before clicks can resume; change it later in Settings → Monitoring and recovery → Advanced targeting" },
             { "本机自检失败", "Self-check failed" },
             { "后台自测通过", "Background test passed" },
             { "后台自测未通过", "Background test failed" },
@@ -261,6 +309,8 @@ namespace CodexAutoResume
         internal static string Get(string source)
         {
             if (String.IsNullOrEmpty(source)) return source;
+            string whole;
+            if (English && english.TryGetValue(source.TrimEnd('。'), out whole)) return whole;
             // Each short UI line omits its final Chinese full stop. Internal
             // punctuation in longer explanations remains intact.
             string clean = Regex.Replace(source, "。[\\r\\n]*$", "");
@@ -271,6 +321,7 @@ namespace CodexAutoResume
                 return String.Join(Environment.NewLine, lines);
             }
             if (!English) return clean;
+            if (Regex.IsMatch(clean, @"^Ctrl\+.*\+F\d+ ")) { int split = clean.IndexOf(' '); return clean.Substring(0, split + 1) + Get(clean.Substring(split + 1)); }
             string result;
             if (english.TryGetValue(clean, out result)) return result;
             if (clean.StartsWith("画面 ")) return clean.Replace("画面 ", "Frame ").Replace(" · 检查 ", " · Checked ");
@@ -328,7 +379,7 @@ namespace CodexAutoResume
         }
         internal static void Apply(Control control)
         {
-            if (!(control is TextBoxBase) && !(control is ComboBox) && !(control is NumericUpDown) && control.Name != "TargetName")
+            if (!(control is TextBoxBase) && !(control is ListControl) && !(control is DateTimePicker) && !(control is NumericUpDown) && control.Name != "TargetName")
             {
                 Binding value = bindings.GetOrCreateValue(control);
                 if (value.Source == null || control.Text != value.Rendered) value.Source = control.Text;
@@ -342,6 +393,11 @@ namespace CodexAutoResume
         internal static DialogResult Show(IWin32Window owner, string message, string title)
         { return Show(owner, message, title, MessageBoxButtons.OK, MessageBoxIcon.None); }
         internal static DialogResult Show(IWin32Window owner, string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon)
-        { return MessageBox.Show(owner, UiText.Get(message), UiText.Get(title), buttons, icon); }
+        {
+            Form form = owner as Form;
+            if (buttons == MessageBoxButtons.OK && form != null && (message.Length > 650 || message.Split('\n').Length > 10))
+            { WindowUi.TextDetails(form, UiText.Get(title), UiText.Get(message)); return DialogResult.OK; }
+            return MessageBox.Show(owner, UiText.Get(message), UiText.Get(title), buttons, icon);
+        }
     }
 }

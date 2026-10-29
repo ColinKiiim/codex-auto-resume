@@ -84,13 +84,14 @@ namespace CodexAutoResume
                     graphics.DrawString((i + 1).ToString(), numberFont, Brushes.Yellow, rect.Left, Math.Max(0, rect.Top - 26));
                 }
             PictureBox context = new PictureBox { Dock = DockStyle.Top, Height = 230, SizeMode = PictureBoxSizeMode.Zoom, Image = overview, BackColor = Color.FromArgb(24, 24, 24) };
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 54, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
-            Button confirm = new Button { Text = "使用所选区域", Enabled = false, AutoSize = true };
-            Button cancel = new Button { Text = "暂不选择", AutoSize = true, DialogResult = DialogResult.Cancel };
+            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(12) };
+            Button confirm = new Button { Text = "使用所选区域", Enabled = false, AutoSize = true, MinimumSize = new Size(80, 32) };
+            Button cancel = new Button { Text = "暂不选择", AutoSize = true, MinimumSize = new Size(80, 32), DialogResult = DialogResult.Cancel };
             list.SelectedIndexChanged += delegate { confirm.Enabled = list.SelectedIndices.Count == 1; };
             confirm.Click += delegate { if (list.SelectedIndices.Count != 1) return; SelectedIndex = list.SelectedIndices[0]; DialogResult = DialogResult.OK; Close(); };
             actions.Controls.Add(confirm); actions.Controls.Add(cancel); CancelButton = cancel;
             Controls.Add(list); Controls.Add(actions); Controls.Add(context); Controls.Add(instructions);
+            list.SizeChanged += delegate { int width = Math.Max(300, list.ClientSize.Width - SystemInformation.VerticalScrollBarWidth); list.Columns[0].Width = width / 4; list.Columns[1].Width = width / 3; list.Columns[2].Width = width - list.Columns[0].Width - list.Columns[1].Width; };
             FormClosed += delegate { context.Image = null; overview.Dispose(); list.SmallImageList = null; images.Dispose(); foreach (Image image in thumbnails) image.Dispose(); };
         }
     }

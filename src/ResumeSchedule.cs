@@ -118,7 +118,7 @@ namespace CodexAutoResume
         { bool active = resumeSchedule.Active; resumeSchedule.Observe(state, at); if (active && !resumeSchedule.Active) ScheduleEvent("ended", "fresh-running-observed"); RefreshSchedule(); }
         void AddScheduleSettings(FlowLayoutPanel panel)
         {
-            panel.Controls.Add(UiLabel("定时恢复"));
+            panel.Controls.Add(UiStyle.Section("定时恢复"));
             schedulePicker = new DateTimePicker { Name = "ResumeAt", Format = DateTimePickerFormat.Custom,
                 CustomFormat = "yyyy-MM-dd HH:mm:ss", Width = 460, Value = resumeSchedule.Active ? resumeSchedule.DueUtc.ToLocalTime() : DateTime.Now.AddHours(1) };
             scheduleDraft = false;

@@ -340,7 +340,7 @@ namespace CodexAutoResume
         }
         void AddScopeSettings(FlowLayoutPanel panel)
         {
-            panel.Controls.Add(UiLabel("恢复范围"));
+            panel.Controls.Add(UiStyle.Section("恢复范围"));
             scopeChoices = new ComboBox { Name = "ScopeChoices", Width = 480, DropDownStyle = ComboBoxStyle.DropDownList };
             panel.Controls.Add(scopeChoices);
             scopeInfo = new Label { AutoSize = true, MaximumSize = new System.Drawing.Size(490, 0), ForeColor = System.Drawing.Color.DimGray,

@@ -64,7 +64,7 @@ namespace CodexAutoResume
     internal sealed partial class MainForm
     {
         readonly List<TimedInstruction> timedInstructions = new List<TimedInstruction>();
-        bool timedLoaded, timedBusy, timedRefreshing;
+        bool timedLoaded, timedBusy;
         Func<Target, string, ComposerContext, string, DateTime, CancellationToken, DateTime?, Task<ComposerReply>> timedRunner = null;
         Task<ComposerReply> RunTimedComposer(Target target, string operation, ComposerContext context, string prompt, DateTime expiry, CancellationToken cancel, DateTime? due)
         { return timedRunner == null ? ComposerBridge.RunAsync(target, operation, context, prompt, expiry, cancel, due) : timedRunner(target, operation, context, prompt, expiry, cancel, due); }
@@ -98,79 +98,42 @@ namespace CodexAutoResume
         {
             if (timedList == null || timedList.IsDisposed) return;
             var previous = timedList.SelectedItem as TimedInstruction;
-            timedRefreshing = true; timedList.BeginUpdate(); timedList.Items.Clear();
+            timedList.BeginUpdate(); timedList.Items.Clear();
             foreach (var task in timedInstructions.OrderBy(x => x.DueUtc)) timedList.Items.Add(task);
             if (selected != null || previous != null) timedList.SelectedItem = selected ?? previous;
-            timedList.EndUpdate(); timedRefreshing = false;
+            timedList.EndUpdate();
         }
-        void AddTimedInstructions(FlowLayoutPanel panel)
+        async Task<bool> BindTimedInstruction(TimedInstruction task)
         {
-            LoadTimedInstructions();
-            panel.Controls.Add(UiLabel("一次性任务指令"));
-            panel.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(490, 0), ForeColor = Color.DimGray,
-                Text = "先在 Codex 打开目标聊天，再绑定当前聊天。到点后等待空框、额度与输入安全条件\n重启后需重新绑定；结果不明的任务不会自动重试" });
-            timedList = new ListBox { Name = "TimedInstructions", Width = 480, Height = 100, HorizontalScrollbar = true };
-            panel.Controls.Add(timedList);
-            timedPicker = new DateTimePicker { Name = "TimedInstructionAt", Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy-MM-dd HH:mm:ss", Width = 460, Value = DateTime.Now.AddHours(1) };
-            panel.Controls.Add(timedPicker);
-            timedPrompt = new TextBox { Name = "TimedInstructionPrompt", Multiline = true, AcceptsReturn = true, MaxLength = 2048, Width = 480, Height = 70, ScrollBars = ScrollBars.Vertical, Text = preferences.ContinuePrompt };
-            panel.Controls.Add(timedPrompt);
-            timedInfo = new Label { AutoSize = true, MaximumSize = new Size(490, 0), ForeColor = Color.DimGray, Text = "修改后点击保存；每个任务保存自己的指令" };
-            panel.Controls.Add(timedInfo);
-            timedList.SelectedIndexChanged += delegate {
-                if (timedRefreshing) return;
-                var task = timedList.SelectedItem as TimedInstruction;
-                if (task == null) return;
-                timedPicker.Value = task.DueUtc.ToLocalTime(); timedPrompt.Text = task.Prompt;
-                timedInfo.Text = "目标：" + (task.Title ?? "未绑定") + " · " + task.State;
-            };
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            row.Controls.Add(UiButton("新增并绑定当前聊天", async delegate { await BindTimedInstruction(null); }));
-            row.Controls.Add(UiButton("保存并绑定选中任务", async delegate {
-                var task = timedList.SelectedItem as TimedInstruction;
-                if (task != null) await BindTimedInstruction(task);
-            }));
-            row.Controls.Add(UiButton("取消选中任务", delegate {
-                var task = timedList.SelectedItem as TimedInstruction;
-                if (task == null || task.State == "执行中") return;
-                if (timedBusy) { timedInfo.Text = "请等待当前操作结束后再取消任务"; return; }
-                task.State = "已取消"; task.Context = null;
-                try { SaveTimedInstructions(); } catch { timedInfo.Text = "保存失败，请检查本地存储"; }
-                RefreshTimedList(task);
-            }));
-            panel.Controls.Add(row); RefreshTimedList(null);
-        }
-        async Task BindTimedInstruction(TimedInstruction task)
-        {
-            if (timedBusy || updating || quotaCancellation != null) return;
+            if (timedBusy || updating || quotaCancellation != null) return false;
             if (task != null && !TimedInstructionPolicy.CanRebind(task.State))
-            { timedInfo.Text = "已完成、已取消或结果不明的任务不能重新执行；请新建任务"; return; }
+            { timedInfo.Text = "已完成、已取消或结果不明的任务不能重新执行；请新建任务"; return false; }
             string prompt = timedPrompt.Text.Replace("\r\n", "\n");
             DateTime local = DateTime.SpecifyKind(timedPicker.Value, DateTimeKind.Unspecified);
-            if (!ComposerRequest.ValidPrompt(prompt)) { timedInfo.Text = "请输入有效的任务指令"; return; }
-            if (TimeZoneInfo.Local.IsInvalidTime(local) || TimeZoneInfo.Local.IsAmbiguousTime(local)) { timedInfo.Text = "请选择没有夏令时歧义的时间"; return; }
+            if (!ComposerRequest.ValidPrompt(prompt)) { timedInfo.Text = "请输入有效的任务指令"; return false; }
+            if (TimeZoneInfo.Local.IsInvalidTime(local) || TimeZoneInfo.Local.IsAmbiguousTime(local)) { timedInfo.Text = "请选择没有夏令时歧义的时间"; return false; }
             DateTime due = TimeZoneInfo.ConvertTimeToUtc(local, TimeZoneInfo.Local);
-            if (due <= DateTime.UtcNow) { timedInfo.Text = "请选择未来时间"; return; }
-            if (target == null || !monitoring || target.Demo) { timedInfo.Text = "请先连接真实 Codex 并开启监测"; return; }
+            if (due <= DateTime.UtcNow) { timedInfo.Text = "请选择未来时间"; return false; }
+            if (target == null || !monitoring || target.Demo) { timedInfo.Text = "请先连接真实 Codex 并开启监测"; return false; }
             if (usageSnapshot == null || usageError != UsageError.None || String.IsNullOrEmpty(usageSnapshot.AccountKey) || (DateTime.UtcNow - usageSnapshot.FetchedUtc).TotalSeconds < 0 || (DateTime.UtcNow - usageSnapshot.FetchedUtc).TotalSeconds > 30)
-            { timedInfo.Text = "等待当前账号核验后再绑定"; return; }
+            { timedInfo.Text = "等待当前账号核验后再绑定"; return false; }
             Target connected = target; int revision = generation; string account = usageSnapshot.AccountKey;
             Label feedback = timedInfo;
             timedBusy = true;
             try
             {
                 var reply = await ComposerBridge.RunAsync(connected, "inspect", null, prompt, DateTime.UtcNow.AddSeconds(25), lifetime.Token);
-                if (feedback == null || feedback.IsDisposed || timedInfo != feedback) return;
+                if (feedback == null || feedback.IsDisposed || timedInfo != feedback) return false;
                 if (target != connected || revision != generation || !monitoring || usageSnapshot == null || usageSnapshot.AccountKey != account || reply.Result != "Observed" || reply.Context == null)
-                { timedInfo.Text = "当前聊天或账号无法确认，未保存任务"; return; }
+                { timedInfo.Text = "当前聊天或账号无法确认，未保存任务"; return false; }
                 var side = await Task.Run(() => ScopeBridge.Run(connected, "read", null, null, null, 0, 4000));
-                if (feedback.IsDisposed || timedInfo != feedback) return;
+                if (feedback.IsDisposed || timedInfo != feedback) return false;
                 if (target != connected || revision != generation || !monitoring || usageSnapshot == null || usageSnapshot.AccountKey != account || side.Result != "Observed" || side.CurrentTitle != reply.Context.Title || side.Entries == null)
-                { timedInfo.Text = "侧栏目标无法确认，未保存任务"; return; }
+                { timedInfo.Text = "侧栏目标无法确认，未保存任务"; return false; }
                 var sidebar = side.Entries.Single(x => x.Kind == "chat" && x.Id == side.CurrentId);
-                if (sidebar.Ambiguous) { timedInfo.Text = "存在同名聊天，未保存任务"; return; }
+                if (sidebar.Ambiguous) { timedInfo.Text = "存在同名聊天，未保存任务"; return false; }
                 if (reply.Context.Backend == "UIA" && !reply.Context.Conversation.EndsWith(":" + sidebar.Id, StringComparison.Ordinal))
-                { timedInfo.Text = "当前聊天证据不一致，未保存任务"; return; }
+                { timedInfo.Text = "当前聊天证据不一致，未保存任务"; return false; }
                 var value = task ?? new TimedInstruction { Id = Guid.NewGuid().ToString("N") };
                 value.Sidebar = sidebar; value.WaitReason = null;
                 value.Prompt = prompt; value.DueUtc = due; value.Zone = ScheduleZone; value.State = "等待执行"; value.Title = reply.Context.Title;
@@ -178,10 +141,10 @@ namespace CodexAutoResume
                 value.Context = reply.Context; value.Window = connected.Window.ToInt64(); value.ProcessId = connected.ProcessId; value.ProcessStart = connected.ProcessStart; value.ProcessPath = connected.ProcessPath; value.AccountKey = TimedInstructionPolicy.AccountFingerprint(account);
                 if (task == null) timedInstructions.Add(value);
                 try { SaveTimedInstructions(); }
-                catch { value.State = "需重新绑定"; value.Context = null; timedInfo.Text = "保存失败，任务不会执行"; RefreshTimedList(value); return; }
-                timedInfo.Text = "已绑定当前聊天并保存"; RefreshTimedList(value);
+                catch { value.State = "需重新绑定"; value.Context = null; timedInfo.Text = "保存失败，任务不会执行"; RefreshTimedList(value); return false; }
+                timedInfo.Text = "已绑定当前聊天并保存"; RefreshTimedList(value); return true;
             }
-            catch (Exception e) { if (feedback != null && !feedback.IsDisposed) feedback.Text = "绑定未完成：" + e.GetType().Name; }
+            catch (Exception e) { if (feedback != null && !feedback.IsDisposed) feedback.Text = "绑定未完成：" + e.GetType().Name; return false; }
             finally { timedBusy = false; }
         }
         bool TimedCurrent(TimedInstruction task, Target connected, int revision)

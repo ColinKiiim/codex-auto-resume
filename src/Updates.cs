@@ -135,6 +135,7 @@ namespace CodexAutoResume
 
     internal static partial class Updates
     {
+        internal static readonly TimeSpan CheckInterval = TimeSpan.FromHours(1);
         internal const string Repository = "ColinKiiim/codex-auto-resume";
         internal const string LatestUrl = "https://api.github.com/repos/" + Repository + "/releases/latest";
         internal static string UpdateRoot { get { return Path.Combine(Portable.DataDirectory, "updates"); } }
