@@ -72,7 +72,7 @@ namespace CodexAutoResume
         {
             internal readonly List<ScopeEntry> Entries = new List<ScopeEntry>();
             internal readonly List<string> Headers = new List<string>();
-            internal string Document;
+            internal readonly HashSet<string> Documents = new HashSet<string>();
             internal int CurrentCount, Count;
             internal ScopeEntry Current;
         }
@@ -98,7 +98,7 @@ namespace CodexAutoResume
                 else if (aria.Split(';').Contains("expanded=false")) project.Expanded = "false";
             }
             if (type == ControlType.Document.Id && Prop(e, 30011) == "RootWebArea")
-            { if (scan.Document != null) throw new InvalidOperationException("multiple documents"); scan.Document = name; }
+            { scan.Documents.Add(name); }
             toolbar = toolbar || type == ControlType.ToolBar.Id && (name == "聊天工具栏" || name == "Chat toolbar");
             if (toolbar && (type == ControlType.Text.Id || type == ControlType.Image.Id)) scan.Headers.Add(name);
             if (type == ControlType.Button.Id && css.Contains("data-[app-action-sidebar-thread-selected=true]"))
@@ -117,12 +117,12 @@ namespace CodexAutoResume
         {
             var automation = (ScopeUia)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("ff48dba4-60ef-4201-aa87-54103eef594e")));
             walker = automation.ControlViewWalker(); var scan = new Scan(); Visit(automation.ElementFromHandle(window), null, false, scan, 0);
-            if (scan.CurrentCount != 1 || scan.Current == null || scan.Document != scan.Current.Title || !scan.Headers.Contains(scan.Current.Title))
+            if (scan.CurrentCount != 1 || scan.Current == null || !scan.Documents.Contains(scan.Current.Title) || !scan.Headers.Contains(scan.Current.Title))
                 throw new InvalidOperationException("current chat evidence disagrees");
             if (scan.Current.Project != null && !scan.Headers.Contains("项目：" + scan.Current.Project) && !scan.Headers.Contains("Project: " + scan.Current.Project))
                 throw new InvalidOperationException("project evidence disagrees");
             if (scan.Entries.GroupBy(x => x.Id).Any(x => x.Count() != 1)) throw new InvalidOperationException("duplicate runtime identity");
-            foreach (var entry in scan.Entries) entry.Ambiguous = scan.Entries.Count(x => x.Kind == entry.Kind && x.Title == entry.Title) != 1;
+            foreach (var entry in scan.Entries) entry.Ambiguous = false; // Runtime identities were checked above; duplicate labels are not duplicate targets.
             return new ScopeReply { Result = "Observed", CurrentId = scan.Current.Id, ProjectId = scan.Current.ProjectId, CurrentTitle = scan.Current.Title, Entries = scan.Entries };
         }
         static AutomationElement Chat(IntPtr window, string id)
@@ -149,13 +149,23 @@ namespace CodexAutoResume
         }
         static DebugComposer DebugNavigation(ComposerRequest request)
         {
-            try { int port = ComposerWorker.DiscoverPort(request.ProcessId); return port == 0 ? null : new DebugComposer(request, port); }
+            try { request.Operation = "observe"; int port = ComposerWorker.DiscoverPort(request.ProcessId); return port == 0 ? null : new DebugComposer(request, port); }
             catch { return null; }
+        }
+        static ScopeReply ReadBound(IntPtr window, ComposerRequest request, bool dom)
+        {
+            using (var debug = DebugNavigation(request))
+            {
+                if (debug != null) try { return debug.ReadScope(); } catch { if (dom) throw; }
+            }
+            if (dom) throw new ComposerUnavailable("sidebar-provider-unavailable");
+            return Read(window);
         }
         static ScopeReply NavigateDebug(DebugComposer composer, ScopeRequest request, ScopeReply before, ScopeEntry destination, bool expand, Action reserve)
         {
             IntPtr window = new IntPtr(request.Target.Window), foreground = Native.GetForegroundWindow(); bool minimized = Native.IsIconic(window);
-            var current = Read(window);
+            bool dom = before.CurrentId.StartsWith("cdp-chat:", StringComparison.Ordinal);
+            var current = ReadBound(window, request.Target, dom);
             if (current.CurrentId != before.CurrentId || !current.Entries.Any(x => x.Id == destination.Id && x.Title == destination.Title && x.ProjectId == destination.ProjectId)) throw new InvalidOperationException("Navigation proof changed");
             composer.Navigate(current, destination, expand, request.InputTick, reserve);
             composer.RefreshAccessibility();
@@ -167,7 +177,7 @@ namespace CodexAutoResume
                 if (!ComposerWorker.Valid(request.Target, request.InputTick)) { reason = "input-or-target-changed"; break; }
                 if (Native.GetForegroundWindow() != foreground) { reason = "foreground-changed"; break; }
                 if (Native.IsIconic(window) != minimized) { reason = "minimized-state-changed"; break; }
-                var fresh = Read(window);
+                var fresh = ReadBound(window, request.Target, dom);
                 if (expand ? fresh.CurrentId == before.CurrentId && fresh.Entries.Any(x => x.Id == destination.Id && x.Expanded == "true") :
                     fresh.CurrentId == destination.Id && fresh.ProjectId == destination.ProjectId)
                 { fresh.Result = expand ? "Expanded" : "Switched"; fresh.Stage = "background-CDP-native-confirmed"; return fresh; }
@@ -182,14 +192,13 @@ namespace CodexAutoResume
             {
                 var request = json.Deserialize<ScopeRequest>(Console.ReadLine());
                 if (request == null || !ComposerWorker.Valid(request.Target, null)) throw new InvalidOperationException("target");
-                IntPtr window = new IntPtr(request.Target.Window); reply = Read(window);
+                IntPtr window = new IntPtr(request.Target.Window); reply = ReadBound(window, request.Target, (request.FromId ?? "").StartsWith("cdp-chat:", StringComparison.Ordinal));
                 if (request.Operation == "switch")
                 {
                     if (!ComposerWorker.Valid(request.Target, request.InputTick) || reply.CurrentId != request.FromId) throw new InvalidOperationException("source changed");
                     var destination = reply.Entries.Single(x => x.Kind == "chat" && x.Id == request.ToId && x.ProjectId == request.ProjectId);
                     // Ambiguous titles are not usable as corroborating evidence.
-                    if (reply.Entries.Count(x => x.Kind == "chat" && x.Title == destination.Title) != 1) throw new InvalidOperationException("duplicate chat title");
-                    using (var debug = DebugNavigation(request.Target))
+                    using (var debug = !destination.Id.StartsWith("cdp-chat:", StringComparison.Ordinal) && reply.Entries.Count(x => x.Kind == "chat" && x.Title == destination.Title && x.ProjectId == destination.ProjectId) > 1 ? null : DebugNavigation(request.Target))
                         if (debug != null) { reply = NavigateDebug(debug, request, reply, destination, false, delegate { invoked = true; }); goto finished; }
                     bool activationRequested = PrepareNavigation(request.Target, request.InputTick, window);
                     var chat = Chat(window, destination.Id); object pattern;
@@ -406,7 +415,7 @@ namespace CodexAutoResume
                     else SetStatus("无法展开指定项目，请手动展开侧栏");
                     return;
                 }
-                var chats = view.Entries.Where(x => x.Kind == "chat" && x.ProjectId == selected.Id && (!scopeBlockedChats.ContainsKey(x.Id) || scopeBlockedChats[x.Id] <= DateTime.UtcNow) && view.Entries.Count(y => y.Kind == "chat" && y.Title == x.Title) == 1).ToList();
+                var chats = view.Entries.Where(x => x.Kind == "chat" && x.ProjectId == selected.Id && (!scopeBlockedChats.ContainsKey(x.Id) || scopeBlockedChats[x.Id] <= DateTime.UtcNow)).ToList();
                 if (chats.Count == 0) { SetStatus("指定项目没有可确认的可见聊天，等待侧栏展开"); return; }
                 int index = chats.FindIndex(x => x.Id == view.CurrentId); var next = chats[(index + 1) % chats.Count];
                 if (next.Id == view.CurrentId) return;

@@ -58,7 +58,7 @@ namespace CodexAutoResume
             Text = "请选择要监控的 Codex 按钮";
             Font = new Font("Microsoft YaHei UI", 10);
             ClientSize = new Size(860, 650); StartPosition = FormStartPosition.CenterScreen;
-            Label instructions = new Label { Text = "发现多个候选，或原选区域已改变。请选择并确认；确认前不会自动点击。", Dock = DockStyle.Top, Height = 50, Padding = new Padding(12) };
+            Label instructions = WindowUi.Guide("发现多个候选，或原选区域已改变。请选择并确认；确认前不会自动点击", 50, 12);
             ListView list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false };
             list.Columns.Add(UiText.Get("编号 / 图标"), 160); list.Columns.Add(UiText.Get("识别状态"), 250); list.Columns.Add(UiText.Get("扫描区域中的位置"), 390);
             ImageList images = new ImageList { ImageSize = new Size(64, 64), ColorDepth = ColorDepth.Depth32Bit };

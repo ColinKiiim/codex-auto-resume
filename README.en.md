@@ -6,7 +6,7 @@
 
 **Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. Compact footer bars also show the current login's remaining quota and reset times. One EXE, no API key.
 
-> Version 1.1.22 urgently removes draft checks from ordinary pause recovery. Editor contents no longer block Resume. Earlier update-handoff/background fixes remain; other TODO work is unchanged. See the [version notes](docs/releases/v1.1.22.md).
+> Version 1.1.23 fixes background binding with embedded browsers, compact layouts and collapsed sidebars, removes unrelated recovery gates, adds the latest capacity error’s bottom Retry action, and repairs timestamp/text clipping across the UI. Ordinary recovery never checks drafts. See the [version notes](docs/releases/v1.1.23.md).
 
 ## Pause on low quota, continue after recovery
 
@@ -100,7 +100,7 @@ The footer normally refreshes about every 10 seconds. Hover for precise reset ti
 
 ### Does it send messages or approve requests?
 
-Ordinary auto-resume clicks only a strictly recognized resume triangle. Opt-in quota control can pause a verified running conversation and, within its own recovery cycle, submit a customizable continuation to a verified empty editor. Drafts, unverifiable contexts and uncertain outcomes require manual handling. It never answers questions or approves permissions. Ordinary startup observes without clicking.
+Ordinary auto-resume prefers the verified latest capacity error’s Retry action, otherwise retaining the composer Resume button. It never reads editor text or checks drafts. Opt-in quota control can pause a verified running conversation and, within its own recovery cycle, submit a customizable continuation to a verified empty editor. Drafts, unverifiable contexts and uncertain outcomes require manual handling. It never answers questions or approves permissions. Ordinary startup observes without clicking.
 
 ### How can I report a detection problem?
 

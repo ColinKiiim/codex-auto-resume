@@ -17,8 +17,10 @@ namespace CodexAutoResume
         public int Port { get; set; }
         public string PageId { get; set; }
         public string NativeBinding { get; set; }
+        public string ActionToken { get; set; }
+        public string ActionSource { get; set; }
         internal static bool SameConversation(ComposerContext a, ComposerContext b)
-        { return a != null && b != null && a.Backend == b.Backend && a.Conversation == b.Conversation && a.Title == b.Title && a.Port == b.Port && a.PageId == b.PageId && a.NativeBinding == b.NativeBinding; }
+        { return a != null && b != null && a.Backend == b.Backend && a.Conversation == b.Conversation && (a.Backend == "CDP" || a.Title == b.Title) && a.Port == b.Port && a.PageId == b.PageId && a.NativeBinding == b.NativeBinding; }
     }
     public sealed class ComposerRequest
     {
@@ -47,6 +49,7 @@ namespace CodexAutoResume
         public bool ActionAttempted { get; set; }
         public DateTime ObservedUtc { get; set; }
         public string BindingNote { get; set; }
+        public string BlockReason { get; set; }
     }
 
     internal static class ComposerBridge

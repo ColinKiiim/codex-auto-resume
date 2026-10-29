@@ -90,7 +90,7 @@ namespace CodexAutoResume
                     int port;
                     try { port = DiscoverPort(request.ProcessId); } catch (Exception error) { port = 0; bindingNote = "port-discovery:" + error.GetType().Name; }
                     try { composer = port == 0 ? null : new DebugComposer(request, port); }
-                    catch (Exception error) { composer = null; bindingNote = "CDP-unavailable:" + error.GetType().Name; }
+                    catch (Exception error) { composer = null; bindingNote = "CDP-unavailable:" + error.GetType().Name + ":" + error.Message; }
                     if (composer == null) { if (bindingNote == null) bindingNote = "no-owned-CDP-endpoint"; composer = new AccessibleComposer(request); }
                 }
                 else composer = request.Context.Backend == "CDP" ? (IComposer)new DebugComposer(request, request.Context.Port) : new AccessibleComposer(request);
@@ -197,15 +197,21 @@ namespace CodexAutoResume
     {
         readonly ComposerRequest request;
         readonly AutomationElement root;
+        readonly bool pageOnly;
         AutomationElement editor;
         readonly ComposerContext context;
         string written;
         bool sendAttempted;
         bool backgroundWrite;
-        internal AccessibleComposer(ComposerRequest request, bool enforceContext = true)
+        internal AccessibleComposer(ComposerRequest request, bool enforceContext = true, bool pageOnly = false)
         {
-            this.request = request; root = AutomationElement.FromHandle(new IntPtr(request.Window));
-            editor = SingleEditor(); context = BuildContext();
+            this.request = request; this.pageOnly = pageOnly; root = AutomationElement.FromHandle(new IntPtr(request.Window));
+            for (int attempt = 0; ; attempt++)
+            {
+                try { editor = SingleEditor(); break; }
+                catch (ComposerUnavailable error) { if (attempt >= 2 || error.Message != "editor-count-0-all-0") throw; Thread.Sleep(150); }
+            }
+            context = BuildContext();
             if (enforceContext && request.Context != null && !Same(request.Context, context) &&
                 !((request.Operation == "inspect" || request.Operation == "observe") && ComposerContext.SameConversation(request.Context, context))) throw new InvalidOperationException();
         }
@@ -218,11 +224,11 @@ namespace CodexAutoResume
         {
             var all = Elements(ControlType.Edit).Concat(Elements(ControlType.Document)).ToArray();
             bool minimized = Native.IsIconic(new IntPtr(request.Window));
-            var editors = all.Where(e => e.Current.IsEnabled && (minimized || !e.Current.IsOffscreen) && e.Current.IsKeyboardFocusable).ToArray();
+            var editors = all.Where(e => (minimized || !e.Current.IsOffscreen)).ToArray();
             var richEditors = editors.Where(e => e.Current.ControlType == ControlType.Edit && e.Current.ClassName.Split(' ').Contains("ProseMirror")).ToArray();
             if (richEditors.Length > 0) editors = richEditors;
-            if (CodexDocument() != null)
-                editors = editors.Where(e => e.Current.ControlType == ControlType.Edit && Named(e, "和 Codex 一起工作", "Work with Codex")).ToArray();
+            var named = editors.Where(e => e.Current.ControlType == ControlType.Edit && Named(e, "和 Codex 一起工作", "Work with Codex")).ToArray();
+            if (named.Length > 0) editors = named;
             if (editors.Length != 1) throw new ComposerUnavailable("editor-count-" + editors.Length + "-all-" + all.Length);
             return editors[0];
         }
@@ -231,8 +237,12 @@ namespace CodexAutoResume
             // Recognized Store Codex structure, observed on 26.1021.3705.0.
             // Do not treat an arbitrary document title as a conversation ID.
             if ((request.ProcessPath ?? "").IndexOf("\\OpenAI.Codex_", StringComparison.OrdinalIgnoreCase) < 0) return null;
-            var documents = Elements(ControlType.Document).Where(e => e.Current.AutomationId == "RootWebArea" && !String.IsNullOrWhiteSpace(e.Current.Name)).ToArray();
-            return documents.Length == 1 ? documents[0] : null;
+            for (var node = editor; node != null; node = TreeWalker.ControlViewWalker.GetParent(node))
+            {
+                if (node.Current.ControlType == ControlType.Document && node.Current.AutomationId == "RootWebArea" && !String.IsNullOrWhiteSpace(node.Current.Name)) return node;
+                if (node.Current.ControlType == ControlType.Window) break;
+            }
+            return null;
         }
         static bool InListItem(AutomationElement element)
         {
@@ -246,13 +256,16 @@ namespace CodexAutoResume
             if (document != null)
             {
                 string name = document.Current.Name;
+                if (pageOnly) return new ComposerContext { Backend = "UIA", Title = name, Conversation = "document:" + Id(document), Editor = Id(editor) };
                 var headers = Elements(ControlType.ToolBar).Where(e => Named(e, "聊天工具栏", "Chat toolbar") &&
                     e.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text)).Cast<AutomationElement>().Any(t => t.Current.Name == name)).ToArray();
                 var conversations = Elements(ControlType.Button).Where(e => e.Current.Name == name && InListItem(e)).ToArray();
-                // Require agreement of the document, unique sidebar item and
-                // current chat header. Duplicate names or hidden sidebars wait.
-                if (headers.Length != 1 || conversations.Length != 1) throw new ComposerUnavailable("codex-conversation-structure");
-                return new ComposerContext { Backend = "UIA", Title = name, Conversation = Id(document) + ":" + Id(conversations[0]), Editor = Id(editor) };
+                // Match the main editor's document to its chat header.
+                if (headers.Length != 1) throw new ComposerUnavailable("chat-header-ambiguous");
+                // Sidebar titles are corroboration, not an availability condition.
+                // The exact editor/document remain bound and are rechecked before actions.
+                string chat = conversations.Length == 1 ? Id(conversations[0]) : "editor:" + Id(editor);
+                return new ComposerContext { Backend = "UIA", Title = name, Conversation = Id(document) + ":" + chat, Editor = Id(editor) };
             }
             // A generic app title alone cannot bind a conversation. Require a
             // selected conversation item with a stable provider runtime ID.
@@ -286,12 +299,12 @@ namespace CodexAutoResume
         AutomationElement ComposerContainer()
         {
             var parent = TreeWalker.ControlViewWalker.GetParent(editor);
-            for (int n = 0; parent != null && n < 7; n++, parent = TreeWalker.ControlViewWalker.GetParent(parent))
+            for (; parent != null; parent = TreeWalker.ControlViewWalker.GetParent(parent))
             {
                 // Never climb into a window/document-wide pool of buttons.
                 if (parent.Current.ControlType == ControlType.Window || parent.Current.ControlType == ControlType.TitleBar || parent.Current.AutomationId == "RootWebArea") break;
                 var buttons = parent.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>().ToArray();
-                if (buttons.Length > 0 && buttons.Length <= 14 && buttons.Any(b => NamedState(b.Current.Name) != ButtonState.Unknown)) return parent;
+                if (buttons.Any(b => NamedState(b.Current.Name) != ButtonState.Unknown)) return parent;
             }
             throw new ComposerUnavailable("composer-container-unavailable");
         }
@@ -396,17 +409,23 @@ namespace CodexAutoResume
                 context.Editor = fresh.Editor;
             }
             Check();
-            // Attachments, dialogs, questions or voice controls block the whole
-            // transaction. Unknown provider structure remains unsupported.
-            bool blocked = Elements(ControlType.Window).Length > 0 || Elements(ControlType.Button).Any(e => Named(e,
-                "Submit", "提交", "Skip", "跳过", "Close voice mode", "退出语音模式", "Remove attachment", "移除附件", "Remove file", "移除文件"));
+            // Question controls belong to this chat document. Content checks
+            // apply only to explicit input/submission operations.
+            bool contentOperation = request.Operation != "observe" && request.Operation != "resume" && request.Operation != "pause";
+            var area = ComposerContainer();
+            var localButtons = area.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>().ToArray();
+            bool question = (CodexDocument() ?? root).FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Group)).Cast<AutomationElement>()
+                .Any(e => ((e.Current.ClassName ?? "").IndexOf("question", StringComparison.OrdinalIgnoreCase) >= 0 || Named(e, "Questions", "问题", "Waiting for your answer", "等待你的回答"))
+                    && e.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>().Any(b => b.Current.IsEnabled && Named(b,"Submit","提交","Skip","跳过")));
+            bool blocked = question || contentOperation && (Elements(ControlType.Window).Length > 0 || localButtons.Any(e => Named(e,
+                "Submit", "提交", "Skip", "跳过", "Close voice mode", "退出语音模式", "Remove attachment", "移除附件", "Remove file", "移除文件")));
             var actions = ActionButtons();
             var states = actions.Select(b => NamedState(b.Current.Name)).Distinct().ToArray();
             ButtonState state = states.Length == 1 && actions.Length == 1 ? states[0] : ButtonState.Unknown;
             object writable; bool canWrite = editor.TryGetCurrentPattern(ValuePattern.Pattern, out writable) && !((ValuePattern)writable).Current.IsReadOnly;
             bool readInput = request.Operation != "observe" && request.Operation != "resume" && request.Operation != "pause";
             return new ComposerReply { Context = context, Safe = !blocked, Running = state == ButtonState.Running, Empty = readInput && Text().Length == 0,
-                State = state, BackgroundWritable = canWrite, ObservedUtc = DateTime.UtcNow };
+                State = state, BlockReason = question ? "current-task-question" : blocked ? "content-operation-blocked" : null, BackgroundWritable = canWrite, ObservedUtc = DateTime.UtcNow };
         }
         public ComposerContext Context { get { return context; } }
         public void Focus(bool background)

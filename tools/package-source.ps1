@@ -43,7 +43,7 @@ try {
 } finally { $zip.Dispose() }
 $verify = [IO.Compression.ZipFile]::OpenRead($pendingArchive)
 try {
-    foreach ($required in @('LICENSE', 'NOTICE', 'VERSION', 'CHANGELOG.md', 'src/DesktopIdentity.cs', 'assets/app.ico', 'build.ps1')) {
+    foreach ($required in @('LICENSE', 'NOTICE', 'VERSION', 'CHANGELOG.md', 'src/DesktopIdentity.cs', 'src/composer-runtime.js', 'assets/app.ico', 'build.ps1')) {
         if (-not $verify.GetEntry('CodexAutoResume/' + $required)) { throw ('Source package missing: ' + $required) }
     }
     foreach ($entry in $verify.Entries) {

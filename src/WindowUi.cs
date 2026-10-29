@@ -55,21 +55,58 @@ namespace CodexAutoResume
                     int usable = Math.Max(60, width - content.Padding.Horizontal - 8);
                     foreach (Control child in content.Controls)
                     {
-                        if (child is Label) child.MaximumSize = new Size(usable, 0);
+                        FitText(child, usable);
                         if (child is TextBox) child.Width = usable;
                         if (child is DateTimePicker || child is ListBox || child is ComboBox && child.Name == "ScopeChoices") child.Width = usable;
                         var row = child as FlowLayoutPanel;
-                        if (row != null) { row.MaximumSize = new Size(usable, 0); row.WrapContents = true; }
+                        if (row != null) { row.MaximumSize = new Size(usable, 0); row.WrapContents = true; FitChildren(row, usable); }
                     }
                     content.PerformLayout();
                 }
                 finally { layingOut = false; }
             };
             viewport.Controls.Add(content); page.Controls.Add(viewport);
+            ObserveText(content, fit);
             viewport.SizeChanged += delegate { fit(); };
             content.ControlAdded += delegate { fit(); };
             page.VisibleChanged += delegate { fit(); };
+            content.FontChanged += delegate { fit(); };
             fit();
+        }
+        internal static void FitChildren(Control parent, int width)
+        {
+            int usable = Math.Max(60, width - parent.Padding.Horizontal - 8);
+            foreach (Control child in parent.Controls)
+            {
+                FitText(child, usable);
+                var row = child as FlowLayoutPanel;
+                if (row != null) { row.MaximumSize = new Size(usable, 0); row.WrapContents = true; FitChildren(row, usable); }
+            }
+        }
+        internal static void ObserveText(Control parent, Action fit)
+        {
+            foreach (Control child in parent.Controls)
+            {
+                if (child is Label || child is CheckBox) { child.TextChanged += delegate { fit(); }; child.FontChanged += delegate { fit(); }; }
+                if (child.HasChildren) ObserveText(child, fit);
+            }
+        }
+        static void FitText(Control child, int width)
+        {
+            if (child is Label) child.MaximumSize = new Size(width, 0);
+            var option = child as CheckBox;
+            if (option == null) return;
+            // Native checkbox AutoSize measures a single line even with MaximumSize.
+            // Explicitly measure wrapped text, leaving room for the check glyph.
+            option.AutoSize = false;
+            option.Width = width;
+            option.Height = Math.Max(24, TextRenderer.MeasureText(option.Text, option.Font, new Size(Math.Max(30, width - 26), Int32.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height + 8);
+        }
+        internal static Label Guide(string text, int minimumHeight, int padding)
+        {
+            var label = new Label { Text = text, Dock = DockStyle.Top, AutoSize = true, MinimumSize = new Size(0, minimumHeight), Padding = new Padding(padding) };
+            label.ParentChanged += delegate { if (label.Parent != null) { Action fit = delegate { label.MaximumSize = new Size(Math.Max(100, label.Parent.ClientSize.Width), 0); }; label.Parent.SizeChanged += delegate { fit(); }; fit(); } };
+            return label;
         }
     }
 }

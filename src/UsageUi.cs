@@ -54,6 +54,12 @@ namespace CodexAutoResume
             int prefixWidth = TextRenderer.MeasureText(prefix, Font).Width;
             int barWidth = Math.Min((int)(42 * scale), Math.Max((int)(12 * scale), (Width - prefixWidth - labels.Sum() - windows.Length * (percentWidth + spacing * 3)) / windows.Length));
             int total = prefixWidth + windows.Length * (barWidth + percentWidth + spacing * 3) + labels.Sum();
+            if (total > Width)
+            {
+                string compact = prefix + " " + String.Join(" · ", windows.Select(w => w.Label + " " + w.Percent));
+                TextRenderer.DrawText(e.Graphics, compact, Font, ClientRectangle, ForeColor, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                return;
+            }
             int x = Math.Max(0, Width - total), middle = Height / 2;
             Draw(e.Graphics, prefix, ref x, prefixWidth); x += spacing;
             for (int i = 0; i < windows.Length; i++)

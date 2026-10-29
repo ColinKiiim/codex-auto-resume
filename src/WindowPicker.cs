@@ -13,8 +13,8 @@ namespace CodexAutoResume
             Shown += delegate { UiText.Apply(this); };
             Text = "请选择要监测的 Codex 窗口"; Icon = DesktopIdentity.LoadIcon(); ShowInTaskbar = false;
             Font = new Font("Microsoft YaHei UI", 10); ClientSize = new Size(640, 330); StartPosition = FormStartPosition.CenterParent;
-            Label guide = new Label { Dock = DockStyle.Top, Height = 65, Padding = new Padding(12), Text = "检测到多个窗口，请选择一个。确认前不会点击；之后可用主窗口的“选择窗口”更换。" };
-            ListBox list = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
+            Label guide = WindowUi.Guide("检测到多个窗口，请选择一个。确认前不会点击；之后可用主窗口的“选择窗口”更换", 65, 12);
+            ListBox list = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, HorizontalScrollbar = true };
             for (int i = 0; i < windows.Count; i++)
             {
                 Screen screen = Screen.FromHandle(windows[i].Window);

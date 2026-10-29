@@ -187,7 +187,7 @@ namespace CodexAutoResume
                         // Real input protection remains enabled in the helper.
                         // Running this check while the user works must abort,
                         // rather than forcing the desktop into an idle state.
-                        bool guarded = submitted.Stage == "focus:ComposerUnavailable:activation-denied" || submitted.Stage == "inspect:ComposerUnavailable:input-or-target-changed" || submitted.Stage == "focus:ComposerUnavailable:focus-postflight" || submitted.Stage == "write-preflight:ComposerUnavailable:value-pattern-unavailable";
+                        bool guarded = submitted.Stage == "focus:ComposerUnavailable:activation-denied" || submitted.Stage == "inspect:ComposerUnavailable:input-or-target-changed" || submitted.Stage == "focus:ComposerUnavailable:focus-postflight" || submitted.Stage == "focus:ComposerUnavailable:input-during-focus" || submitted.Stage == "write-preflight:ComposerUnavailable:value-pattern-unavailable";
                         Require(submitted.Result == "Blocked" && guarded && count == 0 && editor.Text == "", "input activity, activation denial or unavailable ValuePattern aborts before input or send; result=" + submitted.Result + "; stage=" + submitted.Stage + "; fixture-messages=" + count + "; draft-length=" + editor.Text.Length);
                         Console.WriteLine("LIMITATION: successful foreground submission was not exercised; blocked by " + submitted.Stage);
                     }

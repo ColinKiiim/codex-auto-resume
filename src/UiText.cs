@@ -163,6 +163,8 @@ namespace CodexAutoResume
             { "等待操作", "Waiting for input" },
             { "等待发送", "Ready to send" },
             { "检测到暂停", "Pause detected" },
+            { "等待当前任务的问答处理", "Waiting for the current task's answer" },
+            { "重试已投递，等待本次结果或新的失败状态", "Retry sent; waiting for its result or a new failure" },
             { "检测到暂停 · 仅观察", "Pause detected · Observing" },
             { "已恢复", "Resumed" },
             { "已暂停", "Paused" },
@@ -294,6 +296,9 @@ namespace CodexAutoResume
             if (!English || String.IsNullOrEmpty(source)) return source;
             string result = Get(source);
             string[,] terms = {
+                { "状态来源：", "State source: " }, { "恢复入口：", "Recovery action: " }, { "底部重试", "Bottom retry" }, { "输入区按钮", "Composer button" },
+                { "已核对原窗口、聊天与输入区；不是窗口截图", "Bound window, chat and composer; not a captured image" },
+                { "后台控件暂不可核验", "Background controls unavailable" }, { "等待重新确认，不使用旧状态", "Waiting for fresh verification" },
                 { "问答面板已消失，恢复正常图标检测", "Question panel closed; resuming icon detection" },
                 { "问答面板已识别，降低检测频率", "Question panel detected; checking less frequently" },
                 { "不会选择、跳过或提交答案", "Answers are never selected, skipped or submitted automatically" },

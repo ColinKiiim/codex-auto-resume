@@ -39,6 +39,7 @@ foreach ($sampleName in @('resume', 'running', 'send', 'send-current', 'voice', 
 $commonArgs += '/win32icon:' + (Join-Path $projectRoot 'assets\app.ico')
 $commonArgs += '/resource:' + (Join-Path $projectRoot 'assets\app.ico') + ',app.ico'
 $commonArgs += '/resource:' + (Join-Path $projectRoot 'LICENSE') + ',LICENSE'
+$commonArgs += '/resource:' + (Join-Path $projectRoot 'src\composer-runtime.js') + ',composer-runtime.js'
 & $compiler @commonArgs '/target:winexe' '/main:CodexAutoResume.Program' ('/out:' + (Join-Path $distPath 'CodexAutoResume.exe')) @sources
 if ($LASTEXITCODE -ne 0) { throw 'App compilation failed.' }
 $testSource = Join-Path $projectRoot 'tests\Tests.cs'

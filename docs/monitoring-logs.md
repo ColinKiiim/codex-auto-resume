@@ -85,3 +85,7 @@
 更新助手在 `updates/<任务ID>/outcome.json` 记录阶段、异常类型/原生错误码、回退异常及旧/新/备份字节校验，failure.txt 保留完整详情。简要 `update-result` 进入 diagnostics.log，可随近 30 分钟复制/导出；不打包整个更新目录或任务参数。失败提示重新核对实际 EXE，不以通用“已恢复”文案代替结果验证。失败任务继续保留供排查，不自动上传。
 
 旧版助手没有这些新增记录。旧版本再次自动升级失败时，先关闭 CAR 并手动替换新 EXE 一次；无需删除设置或诊断目录。
+
+## 1.1.23：恢复入口与失效状态
+
+`control-observation` 的 `action-source` 区分 `capacity-retry` 和 `composer`，普通恢复继续标注 `input-not-read=True`；`control-blocked` 记录具体问答或内容操作原因，`control-action` 记录选择的入口与投递/确认结果。`control-unavailable` 保留实际绑定阶段和简短异常原因。后台核验失效时清除旧示意图，不把上次运行图标继续显示为当前证据。近 30 分钟复制/导出继续可用。

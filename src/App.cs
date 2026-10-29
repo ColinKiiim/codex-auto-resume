@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -533,7 +533,7 @@ namespace CodexAutoResume
         }
         void ShowHelp()
         {
-            UiDialog.Show(UpdateDialogOwner(), UiText.English ? "Codex Auto Resume " + Portable.Version + "\n\nFinds Codex automatically; starts in observation mode.\nEnable Auto-resume after confirming the target. Pause stops monitoring.\nBackground monitoring works while covered; keep Codex unminimized.\nQuestion panels wait for your answer and are never answered automatically.\nFor multiple buttons, use Select area to confirm the target.\n\nSettings contains diagnostics, demos, logs and updates.\nUpdates ask for confirmation, then download, verify, install and restart.\n\nFallback shortcuts: " + shortcut + "+F8 connects; F7 calibrates;\nF9 pauses/resumes; F10 stops immediately.\nF2 self-check; F4 background test.\n\nLogs: " + logDirectory : "Codex Auto Resume " + Portable.Version + "\n\n自动寻找 Codex，启动时仅观察。\n确认目标后打开“自动恢复”；暂停可停止监测。\n后台监测允许窗口被遮挡，但 Codex 不能最小化。\n需要你回答问题时，工具会等待，不会代答。\n多个按钮时持续扫描，可通过“选择区域”指定目标。\n\n设置中可查看诊断、演示、日志和更新。\n自动更新会先征求确认，再下载、校验、替换并重启。\n\n备用快捷键：" + shortcut + "+F8 连接窗口；\nF7 手动标定；F9 暂停/继续；F10 紧急停止。\nF2 本机自检；F4 后台自测。\n\n日志目录：" + logDirectory, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            UiDialog.Show(UpdateDialogOwner(), UiText.English ? "Codex Auto Resume " + Portable.Version + "\n\nFinds Codex automatically; starts in observation mode.\nEnable Auto-resume after confirming the target. Pause stops monitoring.\nBackground monitoring works while covered; minimizing requires a verified background interface.\nQuestion panels wait for your answer and are never answered automatically.\nFor multiple buttons, use Select area to confirm the target.\n\nSettings contains diagnostics, demos, logs and updates.\nUpdates ask for confirmation, then download, verify, install and restart.\n\nFallback shortcuts: " + shortcut + "+F8 connects; F7 calibrates;\nF9 pauses/resumes; F10 stops immediately.\nF2 self-check; F4 background test.\n\nLogs: " + logDirectory : "Codex Auto Resume " + Portable.Version + "\n\n自动寻找 Codex，启动时仅观察。\n确认目标后打开“自动恢复”；暂停可停止监测。\n后台支持遮挡；可核验接口可用时也支持最小化。\n需要你回答问题时，工具会等待，不会代答。\n多个按钮时持续扫描，可通过“选择区域”指定目标。\n\n设置中可查看诊断、演示、日志和更新。\n自动更新会先征求确认，再下载、校验、替换并重启。\n\n备用快捷键：" + shortcut + "+F8 连接窗口；\nF7 手动标定；F9 暂停/继续；F10 紧急停止。\nF2 本机自检；F4 后台自测。\n\n日志目录：" + logDirectory, "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         void ShowSelfCheck()
         {

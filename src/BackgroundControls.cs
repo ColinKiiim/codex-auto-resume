@@ -22,6 +22,7 @@ namespace CodexAutoResume
         QuotaLevel controlQuotaLevel;
         bool controlPreview;
         bool controlEvidenceBusy;
+        string attemptedRetry;
         DateTime nextControlEvidence;
         readonly System.Windows.Forms.Timer controlsTimer = new System.Windows.Forms.Timer { Interval = 200 };
 
@@ -58,7 +59,7 @@ namespace CodexAutoResume
                     var reply = await ComposerBridge.RunAsync(connected, operation == "inspect" ? "observe" : operation, context, null, DateTime.UtcNow.AddSeconds(12), cancel.Token,
                         operation == "resume" && resumeSchedule.Active ? (DateTime?)resumeSchedule.DueUtc : null);
                     if (operation != "inspect") journal.Write("diagnostics.log", "control-action", "operation=" + operation + "; result=" + reply.Result + "; stage=" + reply.Stage +
-                        "; attempted=" + reply.ActionAttempted + "; state=" + reply.State + "; " + DiagnosticContext(connected), DateTime.UtcNow);
+                        "; attempted=" + reply.ActionAttempted + "; state=" + reply.State + "; source=" + (context == null ? null : context.ActionSource) + "; " + DiagnosticContext(connected), DateTime.UtcNow);
                     return reply;
                 }
                 finally { if (controlCancellation == cancel) controlCancellation = null; }
@@ -76,10 +77,16 @@ namespace CodexAutoResume
                 if (stream != null) using (var image = new Bitmap(stream)) { var old = preview.Image; preview.Image = new Bitmap(image); if (old != null) old.Dispose(); }
             }
             controlPreview = true; previewContentAt = reply.ObservedUtc; SetPreviewKind(false);
-            scores.Text = "状态来源：" + reply.Context.Backend + " · " + Portable.StateName(reply.State) + "\n已核对原窗口、聊天与输入区；不是窗口截图";
+            scores.Text = "状态来源：" + reply.Context.Backend + " · " + Portable.StateName(reply.State) + "\n恢复入口：" + (reply.Context.ActionSource == "capacity-retry" ? "底部重试" : "输入区按钮") + "\n已核对原窗口、聊天与输入区；不是窗口截图";
             journal.Write("diagnostics.log", "control-observation", "backend=" + reply.Context.Backend + "; state=" + reply.State + "; safe=" + reply.Safe +
-                "; input-not-read=True; binding-note=" + reply.BindingNote + "; observed-utc=" + reply.ObservedUtc.ToString("O") + "; conversation-sha256=" + CaptureEvidence.Hash(reply.Context.Conversation) +
+                "; input-not-read=True; action-source=" + reply.Context.ActionSource + "; binding-note=" + reply.BindingNote + "; observed-utc=" + reply.ObservedUtc.ToString("O") + "; conversation-sha256=" + CaptureEvidence.Hash(reply.Context.Conversation) +
                 "; page=" + reply.Context.PageId + "; " + CaptureEvidence.TargetInfo(target, generation), now);
+        }
+        void ClearControlObservation()
+        {
+            var old = preview.Image; preview.Image = null; if (old != null) old.Dispose();
+            scores.Text = "后台控件暂不可核验\n等待重新确认，不使用旧状态";
+            gate.BreakStreak(); recoveryWindow.Reset();
         }
         async Task<bool> TickBackgroundControls(Target connected, int revision)
         {
@@ -95,11 +102,12 @@ namespace CodexAutoResume
             nextControlRead = now.AddMilliseconds(lastObservedState == ButtonState.Resume ? 200 : 1500);
             try
             {
-                var reply = await ReadControls(connected, "inspect", null);
+                var reply = await ReadControls(connected, "inspect", backgroundContext != null && backgroundContext.Backend == "CDP" ? backgroundContext : null);
                 if (!Current(connected, revision)) return true;
                 if (reply.Result != "Observed" || reply.Context == null)
                 {
                     backgroundNeedsUser = true;
+                    ClearControlObservation();
                     controlUnavailableUntil = DateTime.UtcNow.AddSeconds(5);
                     journal.Write("diagnostics.log", "control-unavailable", "stage=" + reply.Stage + "; binding-note=" + reply.BindingNote + "; had-binding=" + backgroundControlsActive, DateTime.UtcNow);
                     if (backgroundControlsActive || Native.IsIconic(connected.Window)) { SetStatus("后台控件暂不可核验，等待重新确认；不会使用旧截图点击"); return true; }
@@ -111,16 +119,19 @@ namespace CodexAutoResume
                     if (quotaPause.Owned) { quotaPause.Phase = QuotaPhase.Uncertain; SetStatus("聊天已变化，请手动核对额度暂停"); return true; }
                 }
                 backgroundContext = reply.Context; backgroundControlsActive = true; backgroundNeedsUser = !reply.Safe;
+                if (reply.State == ButtonState.Running) attemptedRetry = null;
                 ShowControlObservation(reply);
                 int verified = gate.Verified;
                 ObserveSchedule(reply.State, reply.ObservedUtc);
                 bool ready = gate.ObserveCaptured(reply.State, DateTime.UtcNow, reply.ObservedUtc); RecordVerified(verified);
                 var detection = new Detection { State = reply.State };
-                if (!reply.Safe) { recoveryWindow.Reset(); gate.BreakStreak(); SetStatus("后台控件检测到问答或其他待处理状态，等待用户"); return true; }
+                if (!reply.Safe) { recoveryWindow.Reset(); gate.BreakStreak(); SetStatus("等待当前任务的问答处理"); journal.Write("diagnostics.log", "control-blocked", "reason=" + reply.BlockReason, DateTime.UtcNow); return true; }
                 if (await HandleQuota(connected, revision, detection, Rectangle.Empty, reply.ObservedUtc)) return true;
                 if (gate.AwaitingRunning) { SetStatus("后台操作已投递，等待原聊天控件确认运行"); return true; }
                 if (!ready || !automatic.Checked) { ObserveStatus(reply.State); return true; }
                 if (!QuotaAllowsNormal() || !ScopeCheck(connected)) return true;
+                string retryIdentity = backgroundContext.Conversation + ":" + backgroundContext.ActionToken;
+                if (backgroundContext.ActionSource == "capacity-retry" && attemptedRetry == retryIdentity) { SetStatus("重试已投递，等待本次结果或新的失败状态"); return true; }
                 InputSnapshot input = inputReader();
                 if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return true; }
                 DateTime actionAt = DateTime.UtcNow;
@@ -128,6 +139,7 @@ namespace CodexAutoResume
                 if (!Current(connected, revision)) return true;
                 if (changed.ActionAttempted)
                 {
+                    if (backgroundContext.ActionSource == "capacity-retry") attemptedRetry = retryIdentity;
                     gate.MarkAttempt(actionAt);
                     if (changed.Result == "Changed" && changed.State == ButtonState.Running)
                     { int prior = gate.Verified; gate.ObserveCaptured(changed.State, DateTime.UtcNow, changed.ObservedUtc); RecordVerified(prior); ShowControlObservation(changed); ObserveStatus(changed.State); }
@@ -140,6 +152,7 @@ namespace CodexAutoResume
             {
                 if (!Current(connected, revision)) return true;
                 backgroundNeedsUser = true;
+                ClearControlObservation();
                 journal.Write("diagnostics.log", "control-unavailable", "error=" + error.GetType().Name + "; had-binding=" + backgroundControlsActive, DateTime.UtcNow);
                 controlUnavailableUntil = DateTime.UtcNow.AddSeconds(5);
                 if (backgroundControlsActive || Native.IsIconic(connected.Window)) { SetStatus("后台控件暂不可核验，等待重新确认；不会使用旧截图点击"); return true; }
