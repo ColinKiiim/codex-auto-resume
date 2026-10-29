@@ -55,7 +55,7 @@ namespace CodexAutoResume
                 controlMutating = operation != "inspect"; controlQuotaLevel = QuotaNow;
                 try
                 {
-                    var reply = await ComposerBridge.RunAsync(connected, operation, context, null, DateTime.UtcNow.AddSeconds(12), cancel.Token,
+                    var reply = await ComposerBridge.RunAsync(connected, operation == "inspect" ? "observe" : operation, context, null, DateTime.UtcNow.AddSeconds(12), cancel.Token,
                         operation == "resume" && resumeSchedule.Active ? (DateTime?)resumeSchedule.DueUtc : null);
                     if (operation != "inspect") journal.Write("diagnostics.log", "control-action", "operation=" + operation + "; result=" + reply.Result + "; stage=" + reply.Stage +
                         "; attempted=" + reply.ActionAttempted + "; state=" + reply.State + "; " + DiagnosticContext(connected), DateTime.UtcNow);
@@ -78,7 +78,7 @@ namespace CodexAutoResume
             controlPreview = true; previewContentAt = reply.ObservedUtc; SetPreviewKind(false);
             scores.Text = "状态来源：" + reply.Context.Backend + " · " + Portable.StateName(reply.State) + "\n已核对原窗口、聊天与输入区；不是窗口截图";
             journal.Write("diagnostics.log", "control-observation", "backend=" + reply.Context.Backend + "; state=" + reply.State + "; safe=" + reply.Safe +
-                "; empty=" + reply.Empty + "; binding-note=" + reply.BindingNote + "; observed-utc=" + reply.ObservedUtc.ToString("O") + "; conversation-sha256=" + CaptureEvidence.Hash(reply.Context.Conversation) +
+                "; input-not-read=True; binding-note=" + reply.BindingNote + "; observed-utc=" + reply.ObservedUtc.ToString("O") + "; conversation-sha256=" + CaptureEvidence.Hash(reply.Context.Conversation) +
                 "; page=" + reply.Context.PageId + "; " + CaptureEvidence.TargetInfo(target, generation), now);
         }
         async Task<bool> TickBackgroundControls(Target connected, int revision)
@@ -120,7 +120,6 @@ namespace CodexAutoResume
                 if (await HandleQuota(connected, revision, detection, Rectangle.Empty, reply.ObservedUtc)) return true;
                 if (gate.AwaitingRunning) { SetStatus("后台操作已投递，等待原聊天控件确认运行"); return true; }
                 if (!ready || !automatic.Checked) { ObserveStatus(reply.State); return true; }
-                if (!reply.Empty) { SetStatus("原对话有草稿，等待用户处理"); return true; }
                 if (!QuotaAllowsNormal() || !ScopeCheck(connected)) return true;
                 InputSnapshot input = inputReader();
                 if (!recoveryWindow.Ready(input, DateTime.UtcNow)) { SetStatus("等待鼠标、键盘空闲 1.5 秒"); return true; }

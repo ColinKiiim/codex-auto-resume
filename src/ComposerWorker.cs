@@ -102,7 +102,7 @@ namespace CodexAutoResume
                     {
                         ButtonState expected = request.Operation == "resume" ? ButtonState.Resume : ButtonState.Running;
                         var input = Native.ReadInput();
-                        if (!Valid(request, input.Tick) || !reply.Safe || reply.State != expected || request.Operation == "resume" && !reply.Empty ||
+                        if (!Valid(request, input.Tick) || !reply.Safe || reply.State != expected ||
                             request.Context == null || !ComposerContext.SameConversation(request.Context, composer.Context)) throw new ComposerUnavailable("state-preflight");
                         IntPtr foreground = Native.GetForegroundWindow(); bool minimized = Native.IsIconic(new IntPtr(request.Window));
                         // Reserve before invoking; an unknown result must not be
@@ -176,7 +176,7 @@ namespace CodexAutoResume
                             }
                         }
                     }
-                    else if (request.Operation != "inspect") throw new InvalidOperationException();
+                    else if (request.Operation != "inspect" && request.Operation != "observe") throw new InvalidOperationException();
                 }
             }
             catch (Exception error) { stage += ":" + error.GetType().Name + (error is ComposerUnavailable ? ":" + error.Message : ""); reply = new ComposerReply { Result = mayHaveWritten ? "Uncertain" : "Blocked" }; }
@@ -207,7 +207,7 @@ namespace CodexAutoResume
             this.request = request; root = AutomationElement.FromHandle(new IntPtr(request.Window));
             editor = SingleEditor(); context = BuildContext();
             if (enforceContext && request.Context != null && !Same(request.Context, context) &&
-                !(request.Operation == "inspect" && ComposerContext.SameConversation(request.Context, context))) throw new InvalidOperationException();
+                !((request.Operation == "inspect" || request.Operation == "observe") && ComposerContext.SameConversation(request.Context, context))) throw new InvalidOperationException();
         }
         static bool Same(ComposerContext a, ComposerContext b)
         { return a.Backend == b.Backend && a.Title == b.Title && a.Conversation == b.Conversation && a.Editor == b.Editor; }
@@ -404,7 +404,8 @@ namespace CodexAutoResume
             var states = actions.Select(b => NamedState(b.Current.Name)).Distinct().ToArray();
             ButtonState state = states.Length == 1 && actions.Length == 1 ? states[0] : ButtonState.Unknown;
             object writable; bool canWrite = editor.TryGetCurrentPattern(ValuePattern.Pattern, out writable) && !((ValuePattern)writable).Current.IsReadOnly;
-            return new ComposerReply { Context = context, Safe = !blocked, Running = state == ButtonState.Running, Empty = Text().Length == 0,
+            bool readInput = request.Operation != "observe" && request.Operation != "resume" && request.Operation != "pause";
+            return new ComposerReply { Context = context, Safe = !blocked, Running = state == ButtonState.Running, Empty = readInput && Text().Length == 0,
                 State = state, BackgroundWritable = canWrite, ObservedUtc = DateTime.UtcNow };
         }
         public ComposerContext Context { get { return context; } }

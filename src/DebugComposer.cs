@@ -47,7 +47,7 @@ namespace CodexAutoResume
                 // A read-only poll may rebind a replaced editor in the same
                 // independently proven page/chat. Mutations retain the exact
                 // editor token saved by their immediately preceding poll.
-                context = request.Operation == "inspect" ? null : request.Context;
+                context = request.Operation == "inspect" || request.Operation == "observe" ? null : request.Context;
                 var state = Operation("bind", "");
                 var found = new ComposerContext { Backend = "CDP", Port = port, PageId = (string)Get(page, "id"), NativeBinding = nativeProof.Conversation,
                     Conversation = (string)Get(state, "conversation"), Editor = (string)Get(state, "editor"), Title = (string)Get(state, "title") };
@@ -96,7 +96,7 @@ namespace CodexAutoResume
             if (context != null && mode != "bind" && mode != "inspect")
                 using (var native = new AccessibleComposer(request, false))
                     if (native.Context.Conversation != context.NativeBinding || native.Context.Title != context.Title) throw new InvalidOperationException("Native conversation changed");
-            const string function = @"function(mode,sample,expected){
+            const string function = @"function(mode,sample,expected,readInput){
               const visible=e=>!!(e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&!e.closest('[aria-hidden=true],[inert]'));
               const editors=[...document.querySelectorAll('.ProseMirror[contenteditable=true]')].filter(visible);
               if(!this.isConnected||location.protocol!=='app:'||location.hostname!=='-'||editors.length!==1||editors[0]!==this)throw Error('Editor changed');
@@ -130,8 +130,8 @@ namespace CodexAutoResume
                 ||buttons.some(b=>/remove.*(file|attachment)|移除|删除附件|close voice|退出语音|submit|提交/i.test(name(b)))
                 ||[...container.querySelectorAll('input[type=file]')].some(e=>e.files&&e.files.length>0)
                 ||[...container.querySelectorAll('[data-testid*=attachment],[data-testid*=question],[data-testid*=voice],input[type=file]')].some(e=>visible(e)&&e.tagName!=='INPUT');
-              const view=this.pmViewDesc&&this.pmViewDesc.view;
-              const text=view&&view.dom===this&&view.state&&view.state.doc&&typeof view.state.doc.textBetween==='function'
+              const view=readInput&&this.pmViewDesc&&this.pmViewDesc.view;
+              const text=!readInput?null:view&&view.dom===this&&view.state&&view.state.doc&&typeof view.state.doc.textBetween==='function'
                 ?view.state.doc.textBetween(0,view.state.doc.content.size,'\n'):(this.innerText||'').replace(/\r\n/g,'\n');
               if(mode==='focus'){
                 if(unsafe||running||text!=='')throw Error('Unsafe focus');
@@ -144,18 +144,18 @@ namespace CodexAutoResume
                 if(send.length!==1)throw Error('No unique enabled send button');send[0].click();
               }
               if(mode==='resume'||mode==='pause'){
-                if(unsafe||(mode==='resume'&&(state!=='Resume'||text!==''))||(mode==='pause'&&state!=='Running'))throw Error('State changed');
+                if(unsafe||(mode==='resume'&&state!=='Resume')||(mode==='pause'&&state!=='Running'))throw Error('State changed');
                 const action=buttons.filter(b=>(mode==='resume'?resumeName(name(b)):stopName(name(b)))&&!b.disabled&&b.getAttribute('aria-disabled')!=='true');
                 if(action.length!==1)throw Error('No unique composer action');action[0].click();
               }
-              const messages=[...document.querySelectorAll('[data-message-author-role=user],[data-testid=user-message],[data-message-role=user],[data-role=user],[class~=bg-user-message][class~=text-user-message]')].filter(visible);
+              const messages=readInput?[...document.querySelectorAll('[data-message-author-role=user],[data-testid=user-message],[data-message-role=user],[data-role=user],[class~=bg-user-message][class~=text-user-message]')].filter(visible):[];
               const matches=messages.filter(e=>!container.contains(e)&&(e.innerText||e.textContent).trim()===sample).length;
               return {conversation,title,state,editor:this.getAttribute('data-car-editor'),safe:!unsafe,running,empty:text==='',matches:text===sample,editorActive:document.activeElement===this,messageCount:messages.length?matches:-1};
             }";
             if (mutating && !ComposerWorker.Valid(request, inputTick)) throw new ComposerUnavailable("input-before-cdp-action");
             var reply = Call("Runtime.callFunctionOn", new Dictionary<string, object> {
                 { "objectId", editorId }, { "functionDeclaration", function }, { "returnByValue", true },
-                { "arguments", new object[] { new { value = mode }, new { value = sample }, new { value = context } } } });
+                { "arguments", new object[] { new { value = mode }, new { value = sample }, new { value = context }, new { value = request.Operation != "observe" && request.Operation != "resume" && request.Operation != "pause" } } } });
             CheckException(reply);
             return (Dictionary<string, object>)Get((Dictionary<string, object>)Get(reply, "result"), "value");
         }
