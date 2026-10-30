@@ -30,7 +30,9 @@ namespace CodexAutoResume
             {
                 if (!ComposerWorker.PortOwned(port, request.ProcessId)) throw new InvalidOperationException();
                 ComposerContext nativeProof = null;
-                try { using (var native = new AccessibleComposer(request, false, true)) nativeProof = native.Context; } catch (ComposerUnavailable) { }
+                string nativeConversation = null;
+                try { using (var native = new AccessibleComposer(request, false)) { nativeProof = native.Context; nativeConversation = nativeProof.NativeConversation; } }
+                catch (ComposerUnavailable) { try { using (var native = new AccessibleComposer(request, false, true)) nativeProof = native.Context; } catch (ComposerUnavailable) { } }
                 string windowBinding = "window:" + request.Window + ":" + request.ProcessId + ":" + request.ProcessStart;
                 if (request.Context != null && (request.Context.NativeBinding != windowBinding || String.IsNullOrEmpty(request.Context.PageId))) throw new InvalidOperationException("Native window binding changed");
                 string list;
@@ -73,6 +75,7 @@ namespace CodexAutoResume
                 context = request.Operation == "inspect" || request.Operation == "observe" ? null : request.Context;
                 var state = Operation("bind", "");
                 var found = new ComposerContext { Backend = "CDP", Port = port, PageId = (string)Get(page, "id"), NativeBinding = windowBinding,
+                    NativeConversation = nativeConversation,
                     ActionToken = request.Context == null ? (string)Get(state, "actionToken") : request.Context.ActionToken, ActionSource = (string)Get(state, "actionSource"),
                     Conversation = (string)Get(state, "conversation"), Editor = (string)Get(state, "editor"), Title = (string)Get(state, "title") };
                 if (nativeProof != null && found.Title != nativeProof.Title) throw new InvalidOperationException();

@@ -30,7 +30,7 @@ namespace CodexAutoResume
         bool questionPreview;
         DateTime previewContentAt;
         readonly ToolTip tips = new ToolTip();
-        Panel settingsWindow;
+        Form settingsWindow;
         Panel recordsPage;
         ProgressHistory recordsView;
         Button recordsPause, settingsPause;
@@ -287,7 +287,7 @@ namespace CodexAutoResume
         void RecordVerified(int previous)
         { if (gate.Verified > previous) { if (target != null && !target.Demo) SaveRecovery(DateTime.UtcNow); CancelSchedule(false, "completed"); AppendVisible("已恢复", "recovery"); } RefreshUi(); }
 
-        Form UpdateDialogOwner() { return this; }
+        Form UpdateDialogOwner() { return settingsWindow != null && !settingsWindow.IsDisposed && settingsWindow.Visible ? settingsWindow : this; }
 
         async Task CheckUpdatesAsync(bool manual)
         {

@@ -17,10 +17,20 @@ namespace CodexAutoResume
         public int Port { get; set; }
         public string PageId { get; set; }
         public string NativeBinding { get; set; }
+        public string NativeConversation { get; set; }
         public string ActionToken { get; set; }
         public string ActionSource { get; set; }
         internal static bool SameConversation(ComposerContext a, ComposerContext b)
         { return a != null && b != null && a.Backend == b.Backend && a.Conversation == b.Conversation && (a.Backend == "CDP" || a.Title == b.Title) && a.Port == b.Port && a.PageId == b.PageId && a.NativeBinding == b.NativeBinding; }
+        // Only read-only observations can bridge transports or a replaced page.
+        // State actions still require the exact context in SameConversation.
+        internal static bool SameObservedConversation(ComposerContext a, ComposerContext b)
+        {
+            if (SameConversation(a, b)) return true;
+            if (a == null || b == null || String.IsNullOrEmpty(a.NativeBinding) || a.NativeBinding != b.NativeBinding) return false;
+            if (a.Backend == "CDP" && b.Backend == "CDP") return !String.IsNullOrEmpty(a.Conversation) && a.Conversation == b.Conversation;
+            return !String.IsNullOrEmpty(a.NativeConversation) && a.NativeConversation == b.NativeConversation && a.Title == b.Title;
+        }
     }
     public sealed class ComposerRequest
     {

@@ -44,6 +44,15 @@ namespace CodexAutoResume
             Check(ComposerContext.SameConversation(a, b), "readonly editor replacement preserves conversation identity");
             b.PageId = "other"; Check(!ComposerContext.SameConversation(a, b), "another page is another binding");
             b.PageId = a.PageId; b.NativeBinding = "other"; Check(!ComposerContext.SameConversation(a, b), "another native conversation is another binding");
+            b.NativeBinding = a.NativeBinding; b.PageId = "replacement";
+            Check(ComposerContext.SameObservedConversation(a, b) && !ComposerContext.SameConversation(a, b), "readonly rediscovery can recognize the same chat on a new page without authorizing an old action context");
+            var native = new ComposerContext { Backend = "UIA", Conversation = "native-chat", Title = "title", NativeBinding = "native", NativeConversation = "native-chat" };
+            a.NativeConversation = "native-chat";
+            Check(ComposerContext.SameObservedConversation(a, native) && !ComposerContext.SameConversation(a, native), "cross-backend observations require a shared independent native chat proof");
+            native.NativeConversation = "same-title-other-chat";
+            Check(!ComposerContext.SameObservedConversation(a, native), "same title alone cannot bridge another chat");
+            native.NativeConversation = null;
+            Check(!ComposerContext.SameObservedConversation(a, native), "missing native proof cannot authorize a cross-backend rebind");
             var gate = new ResumeGate(); DateTime now = DateTime.UtcNow; gate.MarkAttempt(now); gate.CancelPending(); gate.ObserveCaptured(ButtonState.Running, now.AddSeconds(1), now.AddSeconds(1));
             Check(gate.Attempts == 1 && gate.Verified == 0 && !gate.AwaitingRunning, "a new conversation cannot confirm the previous conversation's action");
             var activity = new MonitorActivity(); activity.Start(now); activity.Control(now);

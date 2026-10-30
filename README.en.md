@@ -6,7 +6,7 @@
 
 **Codex keeps showing “at capacity”, then waits for Resume?** CodexAutoResume is a portable Windows utility that recognizes the resume triangle, clicks after stability checks, and confirms the running square. The usage section also shows the current login's remaining quota and reset times. One EXE, no API key.
 
-> Version 1.1.24 reorganizes monitoring and six settings categories, keeps usage above recent progress, and checks for updates hourly. It also preserves selected schedule times during localization and saves continuation edits explicitly. See the [version notes](docs/releases/v1.1.24.md).
+> Version 1.1.25 automatically rediscovers failed background bindings while preserving conversation, schedule, quota and pending-action checks. Settings now opens in its own window with six persistent sidebar categories. See the [version notes](docs/releases/v1.1.25.md).
 
 ## Pause on low quota, continue after recovery
 
@@ -36,7 +36,7 @@ Read projects/chats in Settings, select a scope and apply it, then enable Auto-r
 
 One-time instructions are separate from the recovery time gate: each task stores its own deadline, target and prompt. Due tasks can return to their bound chat; tasks for one chat retain deadline order and wait for a safe empty editor, verified account, enabled quota conditions and idle input. Rebind after restart. Uncertain outcomes never replay and hold later tasks for that target until review or cancellation.
 
-The default continuation prompt does not overwrite saved task prompts. Local `timed-instructions.json` stores task text and target titles; account bindings use fingerprints. Hover over the recovery counter for up to four records from the last 24 hours or click for all saved recoveries. Settings and records share the main window with monitoring and Pause available.
+The default continuation prompt does not overwrite saved task prompts. Local `timed-instructions.json` stores task text and target titles; account bindings use fingerprints. Hover over the recovery counter for up to four records from the last 24 hours or click for all saved recoveries. Records stay in the main window; Settings opens separately with persistent sidebar navigation and Pause. Monitoring continues in either view.
 
 ## Codex at capacity: when does this tool help?
 

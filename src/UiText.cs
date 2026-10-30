@@ -64,6 +64,8 @@ namespace CodexAutoResume
             { "聊天已变化，请手动核对额度暂停", "Chat changed; check the quota pause manually" },
             { "后台支持遮挡；接口可核验时也支持最小化\n最小化时接口不可用则等待；前台模式需按钮可见", "Background supports covered windows and verified minimized controls\nMinimized targets wait if controls are unavailable; foreground needs a visible button" },
             { "后台控件暂不可核验，等待重新确认；不会使用旧截图点击", "Background controls unavailable; waiting for a verified context" },
+            { "后台连接暂不可用，正在自动重新核验窗口与聊天", "Background connection unavailable; automatically rechecking the window and chat" },
+            { "连接已恢复，等待原操作结果确认；不会重复投递", "Connection restored; waiting for the original action result without repeating it" },
             { "后台控件检测到问答或其他待处理状态，等待用户", "A question or another pending state needs your attention" },
             { "后台操作已投递，等待原聊天控件确认运行", "Background action attempted; waiting for the original chat to confirm running" },
             { "后台操作前状态变化，重新核验原聊天", "State changed before the action; rechecking the original chat" },

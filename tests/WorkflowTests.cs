@@ -46,6 +46,7 @@ namespace CodexAutoResume
                         evidence.Enable(true);
                         Require(!Field<bool>(main, "monitoring"), "changing settings cannot restart paused monitoring");
                         SettingsBoundary(main);
+                        await BindingRecovery(main);
                         Field<Button>(main, "toggle").PerformClick();
                         ArmSchedule(main, DateTime.UtcNow.AddSeconds(5));
                         using (var cover = new Form { Bounds = Rectangle.Inflate(demo.Bounds, 20, 20), BackColor = Color.Magenta, TopMost = true, StartPosition = FormStartPosition.Manual })
@@ -123,6 +124,9 @@ namespace CodexAutoResume
             Require(automatic.Checked && Field<ResumeSchedule>(main, "resumeSchedule").Active && !Field<bool>(main, "monitoring"), "constructing settings preserves paused monitoring, automatic execution and the pending schedule");
             var picker = Field<DateTimePicker>(main, "schedulePicker");
             Require(picker.Value > DateTime.Now.AddMinutes(55), "initial localization does not reset a date picker to the current time");
+            Field<Form>(main, "settingsWindow").Close();
+            Require(!Field<Form>(main, "settingsWindow").Visible && Field<ResumeSchedule>(main, "resumeSchedule").Active && automatic.Checked && !Field<bool>(main, "monitoring"), "closing settings leaves the pending schedule and paused monitoring intact");
+            Call(main, "ShowSettings");
             picker.Value = DateTime.Now.AddHours(2); DateTime selectedTime = picker.Value;
             var pause = Field<QuotaPause>(main, "quotaPause"); pause.Phase = QuotaPhase.Waiting;
             string previous = preferences.ContinuePrompt;
@@ -134,8 +138,71 @@ namespace CodexAutoResume
             Require(preferences.ContinuePrompt == "保存前不得改变任务" && !automatic.Checked && !pause.Owned && !Field<ResumeSchedule>(main, "resumeSchedule").Active, "explicit instruction save commits once and retains cancellation and execution-disabling safeguards");
             preferences.ContinuePrompt = previous;
             Field<TextBox>(main, "quotaPromptEditor").Text = previous;
-            Field<Panel>(main, "settingsWindow").Visible = false;
+            Field<Form>(main, "settingsWindow").Close();
+            Require(!Field<Form>(main, "settingsWindow").IsDisposed && Field<ResumeSchedule>(main, "resumeSchedule").Active == false && !Field<bool>(main, "monitoring"), "closing the owned settings window preserves monitoring and keeps referenced controls alive for reopening");
             automatic.Checked = true;
+        }
+        static async Task BindingRecovery(MainForm main)
+        {
+            Action<string, object> set = (name, value) => main.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(main, value);
+            var original = Field<Target>(main, "target"); var originalGate = Field<ResumeGate>(main, "gate");
+            var automatic = Field<CheckBox>(main, "automatic"); automatic.Checked = false;
+            var connected = new Target { Window = original.Window, ProcessId = original.ProcessId, ProcessStart = original.ProcessStart, ProcessPath = original.ProcessPath };
+            set("target", connected); set("monitoring", true); set("updating", true);
+            int revision = Field<int>(main, "generation");
+            var bound = new ComposerContext { Backend = "CDP", Conversation = "owned-chat", Editor = "editor", PageId = "old-page", Port = 9000,
+                Title = "same title", NativeBinding = "owned-window", NativeConversation = "native-chat" };
+            var native = new ComposerContext { Backend = "UIA", Conversation = "native-chat", Editor = "native-editor", Title = bound.Title,
+                NativeBinding = bound.NativeBinding, NativeConversation = bound.NativeConversation };
+            int reads = 0, actions = 0; bool sawRediscovery = false;
+            Func<Target, string, ComposerContext, Task<ComposerReply>> reader = (t, op, context) => {
+                if (op != "inspect") actions++;
+                reads++;
+                if (reads <= 2) return Task.FromResult(new ComposerReply { Result = "Blocked", Stage = "conversation-identity-ambiguous:2" });
+                sawRediscovery = context == null;
+                return Task.FromResult(new ComposerReply { Result = "Observed", Context = native, State = ButtonState.Resume, Safe = true, ObservedUtc = DateTime.UtcNow });
+            };
+            set("controlReader", reader); set("backgroundTarget", connected); set("backgroundRevision", revision); set("backgroundContext", bound); set("backgroundControlsActive", true);
+            set("controlFailures", 0); set("controlRecoveryActionPending", false);
+            ArmSchedule(main, DateTime.UtcNow.AddHours(1));
+            var pause = Field<QuotaPause>(main, "quotaPause"); pause.Phase = QuotaPhase.Waiting;
+            Func<Task> tick = async () => {
+                set("nextControlRead", DateTime.MinValue); set("controlUnavailableUntil", DateTime.MinValue);
+                await (Task<bool>)main.GetType().GetMethod("TickBackgroundControls", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(main, new object[] { connected, revision });
+            };
+            try
+            {
+                await tick(); await tick(); await tick();
+                Require(sawRediscovery && Field<ComposerContext>(main, "backgroundContext").Backend == "UIA" && Field<int>(main, "controlFailures") == 0 && actions == 0,
+                    "a previously bound CDP failure automatically rediscovers and promotes a verified UIA observation without a click");
+                Require(Field<ResumeSchedule>(main, "resumeSchedule").Active && pause.Phase == QuotaPhase.Waiting && Field<bool>(main, "monitoring"),
+                    "automatic binding recovery does not call Stop or discard schedule and quota ownership");
+                set("backgroundContext", bound); set("controlFailures", 2); native.NativeConversation = "other-chat";
+                await tick();
+                Require(Field<ComposerContext>(main, "backgroundContext") == bound && Field<bool>(main, "backgroundNeedsUser") && actions == 0,
+                    "same-title UIA candidates with another native chat proof cannot replace a bound conversation");
+                native.NativeConversation = bound.NativeConversation;
+                main.GetType().GetMethod("ControlUnavailable", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(main, new object[] { connected, "owned helper disconnected during dispatch", true });
+                await tick();
+                Require(Field<bool>(main, "controlRecoveryActionPending") && actions == 0, "a lost mutation reply remains reserved even when no attempt acknowledgement reached the parent");
+                set("controlRecoveryActionPending", false);
+                var pending = new ResumeGate(); pending.MarkAttempt(DateTime.UtcNow.AddSeconds(-10)); set("gate", pending);
+                set("controlFailures", 0); reads = 0;
+                await tick(); await tick(); await tick();
+                Require(Field<bool>(main, "controlRecoveryActionPending") && pending.Verified == 0 && actions == 0,
+                    "reconnection with the original failure still visible preserves an uncertain action instead of repeating or confirming it");
+                reader = (t, op, context) => Task.FromResult(new ComposerReply { Result = "Observed", Context = native, State = ButtonState.Running, Safe = true, ObservedUtc = DateTime.UtcNow });
+                set("controlReader", reader); await tick();
+                Require(!Field<bool>(main, "controlRecoveryActionPending") && pending.Verified == 1,
+                    "only fresh running evidence of the independently matched chat confirms the original action");
+            }
+            finally
+            {
+                set("controlReader", null); set("target", original); set("gate", originalGate); set("monitoring", false); set("updating", false);
+                set("generation", revision + 1); Call(main, "CancelQuota");
+                main.GetType().GetMethod("CancelSchedule", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(main, new object[] { false, "fixture-finished" });
+                automatic.Checked = true;
+            }
         }
         static async Task TimedQueue(MainForm main)
         {

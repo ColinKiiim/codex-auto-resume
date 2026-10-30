@@ -212,6 +212,10 @@ namespace CodexAutoResume
                 catch (ComposerUnavailable error) { if (attempt >= 2 || error.Message != "editor-count-0-all-0") throw; Thread.Sleep(150); }
             }
             context = BuildContext();
+            context.NativeBinding = "window:" + request.Window + ":" + request.ProcessId + ":" + request.ProcessStart;
+            // Editor/document runtime IDs alone can survive a same-title chat
+            // switch. They cannot bridge an independently bound CDP chat.
+            context.NativeConversation = context.Conversation.IndexOf(":editor:", StringComparison.Ordinal) >= 0 ? null : context.Conversation;
             if (enforceContext && request.Context != null && !Same(request.Context, context) &&
                 !((request.Operation == "inspect" || request.Operation == "observe") && ComposerContext.SameConversation(request.Context, context))) throw new InvalidOperationException();
         }

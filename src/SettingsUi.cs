@@ -9,8 +9,8 @@ namespace CodexAutoResume
         readonly string[] settingsNames = { "常规", "监测与恢复", "额度", "定时与任务", "诊断", "关于与更新" };
         Panel[] settingsPages;
         TableLayoutPanel settingsBody;
-        ComboBox settingsCategories;
         ListBox settingsSidebar;
+        Label settingsTitle;
         Label settingsHealth, updateFeedback, settingsUsage;
         Button updateCheckButton;
         System.Windows.Forms.Timer settingsRefresh;
@@ -22,29 +22,33 @@ namespace CodexAutoResume
         void ShowSettings()
         {
             if (settingsWindow == null || settingsWindow.IsDisposed) BuildSettings();
-            settingsWindow.Visible = true; settingsWindow.BringToFront(); RefreshSettingsLanguage(); RefreshUi();
+            RefreshSettingsLanguage(); RefreshUi();
+            if (!settingsWindow.Visible) WindowUi.Show(settingsWindow, this);
+            else { if (settingsWindow.WindowState == FormWindowState.Minimized) settingsWindow.WindowState = FormWindowState.Normal; settingsWindow.Activate(); }
         }
 
         void BuildSettings()
         {
-            settingsWindow = new Panel { Name = "SettingsPage", Dock = DockStyle.Fill, BackColor = UiStyle.Background };
+            settingsWindow = new Form { Name = "SettingsWindow", Text = UiText.Get("设置"), Font = Font, Icon = Icon, BackColor = UiStyle.Background,
+                AutoScaleMode = AutoScaleMode.Dpi, AutoScaleDimensions = new SizeF(96, 96), ClientSize = new Size(820, 620), MinimumSize = new Size(720, 500), KeyPreview = true };
             var header = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 3, Padding = new Padding(16, 12, 16, 8) };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            Button back = UiButton("返回监测", delegate { if (ResolveQuotaEdits()) { settingsWindow.Visible = false; homeLayout.BringToFront(); } }); back.Name = "BackFromSettings";
+            Button back = UiButton("返回监测", delegate { settingsWindow.Close(); }); back.Name = "BackFromSettings";
             header.Controls.Add(back, 0, 0);
             settingsHealth = new Label { AutoSize = true, Anchor = AnchorStyles.Right, ForeColor = UiStyle.Secondary, Margin = new Padding(8, 0, 8, 0) }; header.Controls.Add(settingsHealth, 1, 0);
             settingsPause = UiButton("暂停监测", delegate { Toggle(); RefreshUi(); }); header.Controls.Add(settingsPause, 2, 0);
 
-            settingsBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
-            settingsBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0)); settingsBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            settingsBody.RowStyles.Add(new RowStyle(SizeType.AutoSize)); settingsBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            var categoryBar = new FlowLayoutPanel { Name = "SettingsCategoryBar", Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(20, 4, 20, 8), WrapContents = false };
-            Label categoryLabel = UiLabel("设置分类"); categoryBar.Controls.Add(categoryLabel);
-            settingsCategories = new ComboBox { Name = "SettingsCategories", DropDownStyle = ComboBoxStyle.DropDownList, Width = 240, Margin = new Padding(12, 2, 0, 0) };
-            categoryBar.Controls.Add(settingsCategories); settingsBody.Controls.Add(categoryBar, 0, 0); settingsBody.SetColumnSpan(categoryBar, 2);
-            settingsSidebar = new ListBox { Name = "SettingsSidebar", Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, BackColor = BackColor, Margin = new Padding(12, 12, 4, 12) };
-            settingsBody.Controls.Add(settingsSidebar, 0, 1);
-            var pages = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty }; settingsBody.Controls.Add(pages, 1, 1);
+            settingsBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            settingsBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200)); settingsBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            settingsBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            settingsSidebar = new ListBox { Name = "SettingsSidebar", AccessibleName = UiText.Get("设置分类"), Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false,
+                BackColor = UiStyle.Background, Margin = new Padding(12, 12, 8, 12), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = Math.Max(40, Font.Height + 18) };
+            settingsSidebar.DrawItem += DrawSettingsCategory;
+            settingsBody.Controls.Add(settingsSidebar, 0, 0);
+            var detail = new Panel { Dock = DockStyle.Fill, BackColor = SystemColors.Window, Margin = Padding.Empty };
+            settingsTitle = new Label { AutoSize = true, Dock = DockStyle.Top, Font = new Font(Font.FontFamily, 15, FontStyle.Bold), Padding = new Padding(20, 16, 20, 8) };
+            var pages = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            detail.Controls.Add(pages); detail.Controls.Add(settingsTitle); settingsBody.Controls.Add(detail, 1, 0);
             settingsPages = new Panel[settingsNames.Length];
             var content = new FlowLayoutPanel[settingsNames.Length];
             for (int i = 0; i < settingsNames.Length; i++)
@@ -57,19 +61,30 @@ namespace CodexAutoResume
             content[2].Controls.Add(UiButton("额度详情", delegate { ShowUsageDetails(); })); AddQuotaSettings(content[2]);
             AddScheduleSettings(content[3]); AddTimedInstructions(content[3]);
             BuildDiagnosticSettings(content[4]); BuildAboutSettings(content[5]);
-            settingsCategories.SelectedIndexChanged += delegate { if (!changingSettingsCategory) SwitchSettingsCategory(settingsCategories.SelectedIndex); };
             settingsSidebar.SelectedIndexChanged += delegate { if (!changingSettingsCategory) SwitchSettingsCategory(settingsSidebar.SelectedIndex); };
-            settingsWindow.Controls.Add(settingsBody); settingsWindow.Controls.Add(header); Controls.Add(settingsWindow);
-            Action fitNavigation = delegate {
-                bool wide = settingsWindow.ClientSize.Width >= UiStyle.Px(this, 760);
-                categoryBar.Visible = !wide; settingsSidebar.Visible = wide;
-                settingsBody.ColumnStyles[0].Width = wide ? UiStyle.Px(this, 164) : 0;
-                settingsCategories.Width = Math.Max(120, settingsWindow.ClientSize.Width - categoryBar.Padding.Horizontal - categoryLabel.PreferredSize.Width - settingsCategories.Margin.Horizontal - 8);
+            settingsWindow.Controls.Add(settingsBody); settingsWindow.Controls.Add(header);
+            settingsWindow.FontChanged += delegate { settingsSidebar.ItemHeight = Math.Max(UiStyle.Px(settingsWindow, 40), settingsWindow.Font.Height + UiStyle.Px(settingsWindow, 18)); };
+            settingsWindow.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) { settingsWindow.Close(); e.Handled = true; } };
+            settingsWindow.FormClosing += delegate(object sender, FormClosingEventArgs e) {
+                if (e.CloseReason != CloseReason.UserClosing) return;
+                e.Cancel = true;
+                if (ResolveQuotaEdits()) { settingsWindow.Hide(); Activate(); }
             };
-            settingsWindow.SizeChanged += delegate { fitNavigation(); }; settingsWindow.FontChanged += delegate { fitNavigation(); }; categoryLabel.TextChanged += delegate { fitNavigation(); };
             settingsWindow.Disposed += delegate { if (settingsRefresh != null) { settingsRefresh.Stop(); settingsRefresh.Dispose(); } };
             FormClosing += delegate(object sender, FormClosingEventArgs e) { if (!installingUpdate && !ResolveQuotaEdits()) e.Cancel = true; };
             UiText.Apply(settingsWindow); RefreshSettingsLanguage(); SwitchSettingsCategory(settingsCategory);
+        }
+
+        void DrawSettingsCategory(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            Color fill = selected ? SystemColors.Highlight : settingsSidebar.BackColor;
+            Color text = selected ? SystemColors.HighlightText : SystemColors.WindowText;
+            using (var brush = new SolidBrush(fill)) e.Graphics.FillRectangle(brush, e.Bounds);
+            Rectangle label = e.Bounds; label.Inflate(-12, 0);
+            TextRenderer.DrawText(e.Graphics, Convert.ToString(settingsSidebar.Items[e.Index]), e.Font, label, text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            e.DrawFocusRectangle();
         }
 
         void RefreshSettingsLanguage()
@@ -78,9 +93,13 @@ namespace CodexAutoResume
             changingSettingsCategory = true;
             try
             {
-                settingsCategories.Items.Clear(); settingsSidebar.Items.Clear();
-                foreach (string name in settingsNames) { settingsCategories.Items.Add(UiText.Get(name)); settingsSidebar.Items.Add(UiText.Get(name)); }
-                settingsCategories.SelectedIndex = settingsCategory; settingsSidebar.SelectedIndex = settingsCategory;
+                settingsSidebar.Items.Clear();
+                string[] navigation = UiText.English ? new[] { "General", "Recovery", "Usage", "Tasks", "Diagnostics", "About" } : settingsNames;
+                foreach (string name in navigation) settingsSidebar.Items.Add(name);
+                settingsSidebar.AccessibleName = UiText.Get("设置分类");
+                settingsSidebar.SelectedIndex = settingsCategory;
+                settingsTitle.Text = UiText.Get(settingsNames[settingsCategory]);
+                settingsWindow.Text = UiText.Get("设置") + " · " + settingsTitle.Text;
             }
             finally { changingSettingsCategory = false; }
             UiText.Apply(settingsWindow);
@@ -172,7 +191,7 @@ namespace CodexAutoResume
         bool ResolveQuotaEdits()
         {
             if (quotaPromptEditor == null || quotaPromptEditor.IsDisposed || quotaPromptEditor.Text.Replace("\r\n", "\n") == preferences.ContinuePrompt) return true;
-            DialogResult result = UiDialog.Show(this, "继续指令有未保存的修改，是否保存？\n选择“否”放弃修改，选择“取消”继续编辑", "未保存的修改", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            DialogResult result = UiDialog.Show(UpdateDialogOwner(), "继续指令有未保存的修改，是否保存？\n选择“否”放弃修改，选择“取消”继续编辑", "未保存的修改", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
             if (result == DialogResult.Cancel) return false;
             if (result == DialogResult.Yes) return SaveQuotaPrompt();
             quotaPromptEditor.Text = preferences.ContinuePrompt; UiText.Set(quotaPromptFeedback, ""); return true;

@@ -296,6 +296,7 @@ namespace CodexAutoResume
         int resumeFrames, runningFrames;
         bool pendingVerification;
         public bool AwaitingRunning { get; private set; }
+        internal bool PendingVerification { get { return pendingVerification; } }
         public int Attempts { get; private set; }
         public int Verified { get; private set; }
         DateTime attemptedAt, firstResumeAt, lastVerified = DateTime.MinValue;

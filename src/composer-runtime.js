@@ -30,15 +30,31 @@ function(mode, sample, expected, readInput) {
   }
   if (!container) throw Error('composer-region-unavailable');
   // These metadata anchors can have zero size. They identify the chat, not a screen coordinate.
-  const metadata = [...document.querySelectorAll('[data-above-composer-conversation-id]')]
-    .filter(e => !e.closest('[aria-hidden=true],[inert]'))
+  const metadataSelector = '[data-above-composer-conversation-id]';
+  // Metadata itself can be zero-sized or hidden. Reject inactive ancestor
+  // views, and prefer the nearest chat region belonging to the main editor.
+  const activeMetadata = e => {
+    if (e.closest('[aria-hidden=true],[inert]')) return false;
+    for (let p = e.parentElement; p && p !== document.body; p = p.parentElement)
+      if (getComputedStyle(p).display === 'none' || getComputedStyle(p).visibility === 'hidden') return false;
+    return true;
+  };
+  let anchors = [];
+  for (let p = container; p && p !== document.body; p = p.parentElement) {
+    const local = [...p.querySelectorAll(metadataSelector)].filter(activeMetadata);
+    if (local.length) { anchors = local; break; }
+  }
+  if (!anchors.length) anchors = [...document.querySelectorAll(metadataSelector)].filter(activeMetadata);
+  const metadata = anchors
     .map(e => e.getAttribute('data-above-composer-conversation-id')).filter(Boolean);
   const selected = [...document.querySelectorAll('[data-app-action-sidebar-thread-id][aria-current=page],a[aria-current=page][href],[data-thread-id][aria-selected=true]')]
+    .filter(e => e.hasAttribute('data-app-action-sidebar-thread-id') || e.hasAttribute('data-thread-id') || /\/(?:threads?|conversations?|chats?)\//.test(e.getAttribute('href') || ''))
     .filter(visible).map(e => e.getAttribute('data-app-action-sidebar-thread-id') || e.getAttribute('data-thread-id') || e.getAttribute('href')).filter(Boolean);
   const canonical = value => (value.match(/[0-9a-f]{8}-[0-9a-f-]{27}/i)?.[0] || value).toLowerCase();
   const metadataIds = [...new Set(metadata.map(canonical))], selectedIds = [...new Set(selected.map(canonical))];
   const ids = metadataIds.length ? metadataIds : selectedIds;
   if (ids.length !== 1) throw Error('conversation-identity-ambiguous:' + ids.length);
+  if (metadataIds.length && selectedIds.length && (selectedIds.length !== 1 || selectedIds[0] !== ids[0])) throw Error('conversation-identity-conflict');
   const conversation = ids[0], title = document.title;
   if (expected && (expected.Conversation !== conversation || editor.__carEditorToken !== expected.Editor)) throw Error('Conversation changed');
   if (!expected && mode === 'bind' && !editor.__carEditorToken) editor.__carEditorToken = crypto.randomUUID();
